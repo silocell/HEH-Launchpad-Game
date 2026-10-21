@@ -134,11 +134,19 @@ a.back:hover{color:var(--accent)}
      See README.md for the SQL.
      ------------------------------------------------------------- -->
 <script>
-window.GATE_RUN = null;
-/* window.GATE_RUN = {
-     url: "https://YOUR-PROJECT.supabase.co",
-     key: "YOUR-PUBLISHABLE-KEY"
-   }; */
+/* These are Shiv's. They are safe to publish - the key is the
+   publishable one, which is designed to sit in a public page, and
+   everything behind it is protected by row-level security. They are
+   already in the open on the homework site's own pages.
+
+   FORKED THIS? Put your own in, or set it to null. Scores sent to
+   somebody else's project go nowhere: saving needs an account on THAT
+   project, and your players will not have one. The game plays fully
+   either way. The SQL you need is in README.md. */
+window.GATE_RUN = {
+  url: "https://lkyfpvlrqgezgitfmpqo.supabase.co",
+  key: "sb_publishable_BTzbP_oOZnfvCgs4UBJYXA_WCTyT88M"
+};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js"></script>
 <script>
