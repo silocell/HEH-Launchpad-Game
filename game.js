@@ -39,7 +39,11 @@ const MAX_SPEED   = 52;
    At 150 they were a smudge on the horizon until the last moment, which
    made it a reaction test rather than a maths one. */
 const SPAWN_Z     = -96;    /* where a set of gates appears */
-const JUDGE_Z     = 1.5;    /* where it counts as passed */
+/* At the car's nose, not behind its back bumper. At 1.5 the gate had
+   already passed through the car before it was judged, which gave a
+   free window to change lanes after visibly driving through the wrong
+   gate - 160ms of it at starting speed. */
+const JUDGE_Z     = -1.4;
 const LIVES       = 3;
 const MAX_LIVES   = 5;
 const POWER_EVERY = 4;      /* correct answers between pick-ups */
@@ -66,7 +70,14 @@ const ask = el("ask"), sub = el("sub"), flash = el("flash");
 const scoreEl = el("score"), livesEl = el("lives"), powersEl = el("powers");
 
 let renderer, scene, camera, player, glow, gateSet = [];
+let ready = false;
 let running = false, paused = false, speed = START_SPEED, score = 0, lives = LIVES;
+/* A clock that only runs while the game does. setTimeout does not care
+   that you have paused: the next question was arriving behind the pause
+   screen, taking the explanation of the last one with it and moving the
+   gates while you could not see them. Everything timed is measured
+   against this instead, and it stops when the game stops. */
+let gameClock = 0, nextAt = 0, flashUntil = 0;
 let lane = 1, laneX = 0, question = null, subject = "maths", judged = false;
 let orb = null, orbLane = 0, orbPower = null, sinceOrb = 0;
 let blocks = null; const blockAt = []; const BLOCKS = 44;
@@ -74,6 +85,9 @@ const wheels = [];
 let dashes = null; const dashAt = []; const DASHES = 40;
 const _flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0));
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion();
+/* Reused rather than rebuilt: these two loops ran eighty-four times a
+   frame and were making a fresh Vector3 every time. */
+const _pos = new THREE.Vector3();
 let shield = false, doubleLeft = 0, fiftyNext = false;
 let best = 0;
 
@@ -166,14 +180,22 @@ function spawnOrb(){
 }
 
 function takePower(p){
-  if (p.key === "shield") shield = true;
-  else if (p.key === "slow")   speed = Math.max(START_SPEED, speed - 9);
-  else if (p.key === "double") doubleLeft = 5;
-  else if (p.key === "fifty")  fiftyNext = true;
-  else if (p.key === "heart")  lives = Math.min(MAX_LIVES, lives + 1);
+  /* Say what actually happened. Three of these can land when they have
+     nothing to give - a second shield on top of one you are already
+     holding, an extra life at five, a slow-down when you are already at
+     the slowest - and announcing "Shield up" when nothing changed
+     teaches somebody that the game lies to them. */
+  let did = true;
+  if (p.key === "shield"){ did = !shield; shield = true; }
+  else if (p.key === "slow"){ did = speed > START_SPEED; speed = Math.max(START_SPEED, speed - 9); }
+  else if (p.key === "double"){ doubleLeft = 5; }
+  else if (p.key === "fifty"){ did = !fiftyNext; fiftyNext = true; }
+  else if (p.key === "heart"){ did = lives < MAX_LIVES; lives = Math.min(MAX_LIVES, lives + 1); }
   paintLives();
   paintPowers();
-  say("<b>" + p.word + "</b><br>" + p.says);
+  const spare = { shield: "You already have one", slow: "Already going as slow as it gets",
+                  fifty: "You already have one", heart: "Already on full lives" };
+  say("<b>" + p.word + "</b><br>" + (did ? p.says : (spare[p.key] || p.says)));
 }
 
 function paintLives(){
@@ -206,6 +228,7 @@ function setQuestion(){
     fiftyNext = false;
     paintPowers();
   }
+  question.blanked = blanked;
 
   question.options.forEach((opt, i) => {
     drawLabel(gateSet[i].canvas, i === blanked ? "\u2014" : opt,
@@ -219,13 +242,17 @@ function setQuestion(){
 function say(html, wrong){
   flash.innerHTML = html;
   flash.className = "on" + (wrong ? " wrong" : "");
-  clearTimeout(say._t);
-  say._t = setTimeout(() => { flash.className = ""; }, wrong ? 2200 : 700);
+  /* On the game clock, so pausing to read why you got one wrong does
+     not make the reason disappear while you are reading it. */
+  flashUntil = gameClock + (wrong ? 2.2 : 0.7);
 }
 
 function judge(){
   judged = true;
-  const chosen = question.options[lane];
+  /* A gate blanked by 50:50 shows a dash, so reporting the number that
+     used to be printed on it - "48, it was 56" - names something the
+     player never saw. */
+  const chosen = (lane === question.blanked) ? "the blank gate" : question.options[lane];
   if (chosen === question.answer){
     const worth = doubleLeft > 0 ? 2 : 1;
     if (doubleLeft > 0) doubleLeft--;
@@ -259,15 +286,27 @@ function judge(){
      seconds and the next set of gates was arriving while you were still
      reading it - which at full speed means getting the next one wrong
      because you were learning why you got the last one wrong. */
-  setTimeout(() => { if (running) setQuestion(); }, chosen === question.answer ? 120 : 1100);
+  nextAt = gameClock + (chosen === question.answer ? 0.12 : 1.1);
 }
 
 function gameOver(){
   running = false;
-  if (score > best){ best = score; try { localStorage.setItem("gr-best", String(best)); } catch(e){} }
+  nextAt = 0;
+  /* The flash and the badges are now cleared inside the frame loop,
+     which stops when the game does - so without this the red "it was
+     X" card and a stale "SHIELD x2" badge sat blurred behind the
+     game-over dialog until the next run. */
+  flashUntil = 0;
+  flash.className = "";
+  ask.textContent = "";
+  sub.textContent = "";
+  shield = false; doubleLeft = 0; fiftyNext = false;
+  paintPowers();
+  const beatIt = score > best;
+  if (beatIt){ best = score; try { localStorage.setItem("gr-best", String(best)); } catch(e){} }
   el("overScore").textContent = score;
   el("overBest").textContent = best;
-  el("overTitle").textContent = score >= best && score > 0 ? "New best" : "Out of lives";
+  el("overTitle").textContent = beatIt ? "New best" : "Out of lives";
   el("overLede").textContent = score === 0
     ? "That one got away. The first few are gentle — go again."
     : "You cleared " + score + " gate" + (score===1?"":"s") + ".";
@@ -460,7 +499,8 @@ function placeDashes(){
   for (let i = 0; i < DASHES; i++){
     const d = dashAt[i];
     _v.set(1, 1, 1);
-    _m.compose(new THREE.Vector3(d.x, 0.02, d.z), _flat, _v);
+    _pos.set(d.x, 0.02, d.z);
+    _m.compose(_pos, _flat, _v);
     dashes.setMatrixAt(i, _m);
   }
   dashes.instanceMatrix.needsUpdate = true;
@@ -470,7 +510,8 @@ function placeBlocks(){
   for (let i = 0; i < BLOCKS; i++){
     const b = blockAt[i];
     _v.set(b.w, b.h, b.d);
-    _m.compose(new THREE.Vector3(b.x, b.h/2 - 0.06, b.z), _q, _v);
+    _pos.set(b.x, b.h/2 - 0.06, b.z);
+    _m.compose(_pos, _q, _v);
     blocks.setMatrixAt(i, _m);
   }
   blocks.instanceMatrix.needsUpdate = true;
@@ -479,11 +520,23 @@ function placeBlocks(){
 let last = performance.now();
 function frame(now){
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last)/1000);
+  /* Capped so one long frame - a stall, a slow first paint - cannot
+     teleport the car through a set of gates. The cap is also a speed
+     limit on a slow machine: below 1/CAP frames a second the whole
+     game runs in slow motion rather than skipping, which is the right
+     way round, since you still get the same number of frames to react
+     in. At 0.05 that kicked in under 20fps, which a weak Chromebook
+     could plausibly sit at; 0.1 means it only starts slowing below 10. */
+  const dt = Math.min(0.1, (now - last)/1000);
   last = now;
   /* Frozen: still drawn, so it does not go black, but nothing moves
      and nothing can be judged while you are not looking. */
   if (!running || paused) { renderer.render(scene, camera); return; }
+
+  gameClock += dt;
+
+  if (nextAt && gameClock >= nextAt){ nextAt = 0; setQuestion(); }
+  if (flashUntil && gameClock >= flashUntil){ flashUntil = 0; flash.className = ""; }
 
   const move = speed * dt;
 
@@ -536,6 +589,12 @@ function frame(now){
 }
 
 function start(){
+  /* Without this, a machine with no WebGL - acceleration switched off,
+     a locked-down Chromebook - showed the "can't run the 3d" note and
+     then let you press Start anyway: the menu vanished, setQuestion()
+     reached into an empty gateSet and threw, and the only way out was
+     a reload. */
+  if (!ready) return;
   el("startSheet").classList.remove("on");
   el("overSheet").classList.remove("on");
   running = true; paused = false;
@@ -546,6 +605,7 @@ function start(){
      in one game was still sitting there at the start of the next, and
      so was any x2 left over - which quietly made the second run of the
      evening easier than the first. */
+  gameClock = 0; nextAt = 0; flashUntil = 0; flash.className = "";
   shield = false; doubleLeft = 0; fiftyNext = false; sinceOrb = 0;
   if (orb) orb.mesh.visible = false;
   /* And the questions start forgetting from scratch, or a new game
@@ -571,11 +631,29 @@ addEventListener("visibilitychange", () => {
   if (document.hidden && running && !paused) setPaused(true);
   last = performance.now();
 });
-addEventListener("resize", () => {
-  camera.aspect = innerWidth/innerHeight;
+/* On two screens, or a tiled window, clicking into something else does
+   not hide the tab - so the run carried on unwatched and lost lives. */
+addEventListener("blur", () => { if (running && !paused) setPaused(true); });
+/* Portrait phones are much narrower than they are tall, and the field
+   of view is measured vertically - so on a 390-wide screen the left and
+   right answers slid off the edges during the final approach, exactly
+   when you are committing to one. This widens the view until the
+   outermost gate is certain to be on screen. */
+function fitCamera(){
+  const aspect = innerWidth / innerHeight;
+  camera.aspect = aspect;
+  /* Half-width that must be visible at the distance gates are read
+     from: the far edge of an outer gate, plus a margin. */
+  const needHalf = Math.abs(LANES[2]) + 2.5 + 1.2;
+  const atDist = 20;
+  const wantH = Math.atan(needHalf / atDist);
+  const vFov = 2 * Math.atan(Math.tan(wantH) / Math.max(0.2, aspect));
+  camera.fov = Math.min(100, Math.max(66, vFov * 180 / Math.PI));
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-});
+}
+
+addEventListener("resize", () => { if (ready) fitCamera(); });
 
 /* ---------- scores ---------- */
 function saveScore(n){ window.__saveScore && window.__saveScore(n); }
@@ -589,14 +667,39 @@ try {
   renderer.setSize(innerWidth, innerHeight);
   document.body.appendChild(renderer.domElement);
   build();
+  fitCamera();
+  ready = true;
   try { best = Number(localStorage.getItem("gr-best")) || 0; } catch(e){ best = 0; }
   el("best").textContent = best;
   window.__gateRunStarted = true;
   requestAnimationFrame(frame);
+
+  /* Gate text is drawn into a canvas once and never redrawn, so starting
+     before the webfont arrived baked the whole run in the fallback face
+     while the question card above it was in the right one. If the font
+     turns up later, redraw whatever is on the gates. */
+  if (document.fonts && document.fonts.ready){
+    document.fonts.ready.then(() => {
+      if (!question) return;
+      question.options.forEach((opt, i) => {
+        drawLabel(gateSet[i].canvas, i === question.blanked ? "\u2014" : opt,
+                  i === question.blanked ? "#c6cdd6" : "#ffffff");
+        gateSet[i].tex.needsUpdate = true;
+      });
+    }).catch(() => {});
+  }
 } catch (err){
   window.__gateRunStarted = true;
+  ready = false;
   const n = el("note");
-  if (n){ n.textContent = "This device can't run the 3d game. Everything else on the site still works."; n.style.color = "var(--bad)"; }
+  if (n){
+    n.textContent = "This device can't run the 3d game \u2014 3d graphics look to be switched off or unavailable here. Everything else on the site still works.";
+    n.style.color = "var(--bad)";
+  }
+  /* Say so on the button as well. A live Start that does nothing but
+     wipe the menu is worse than one that admits it cannot run. */
+  const go = el("startBtn");
+  if (go){ go.disabled = true; go.textContent = "Can't run here"; go.style.opacity = ".6"; }
   console.error(err);
 }
 
@@ -619,6 +722,9 @@ window.__gr = {
   get running(){ return running; },
   get speed(){ return speed; },
   get paused(){ return paused; },
+  get clock(){ return gameClock; },
+  get nextAt(){ return nextAt; },
+  get judged(){ return judged; },
   setPaused: (v) => setPaused(v),
   get shield(){ return shield; },
   get doubleLeft(){ return doubleLeft; },

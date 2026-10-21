@@ -306,6 +306,14 @@ var QUIZ = (function(){
   var RECENT_MAX = 24;
   var lastMaker = null;
 
+  /* The question AND its answer, not the question alone. Every spelling
+     question asks "Which is spelt correctly?", so keying on the text
+     made all eighteen of them look like one repeated question: once any
+     spelling came up, every other spelling was refused for the next
+     twenty-four goes. Measured over 2000 draws, spelling appeared 3.75%
+     of the time instead of its fair 20%. */
+  function keyOf(made){ return made.text + "\u0000" + made.answer; }
+
   function freshFrom(pool, level){
     var best = null;
     for (var tries = 0; tries < 14; tries++){
@@ -315,10 +323,10 @@ var QUIZ = (function(){
       if (pool.length > 1 && maker === lastMaker && tries < 7) continue;
       var made = maker(level);
       if (!best) best = { q: made, m: maker };
-      if (RECENT.indexOf(made.text) === -1){ best = { q: made, m: maker }; break; }
+      if (RECENT.indexOf(keyOf(made)) === -1){ best = { q: made, m: maker }; break; }
     }
     lastMaker = best.m;
-    RECENT.push(best.q.text);
+    RECENT.push(keyOf(best.q));
     while (RECENT.length > RECENT_MAX) RECENT.shift();
     return best.q;
   }

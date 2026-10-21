@@ -58,8 +58,13 @@ canvas{display:block;position:fixed;inset:0;z-index:0}
 #flash.wrong b{color:var(--bad)}
 
 .sheet{position:fixed;inset:0;z-index:5;display:none;place-items:center;padding:20px;
+  overflow:auto;-webkit-overflow-scrolling:touch;
   background:rgba(14,32,48,.55);backdrop-filter:blur(6px);pointer-events:auto}
 .sheet.on{display:grid}
+/* On a phone in landscape there is barely 330px of height; centring a
+   400px card in it clipped the top and bottom with no way to reach
+   them. Above that height it stays centred. */
+@media (max-height:560px){ .sheet{place-items:start center} .card{margin:auto 0} }
 .card{width:min(440px,100%);background:#fff;border-radius:26px;padding:24px;
   box-shadow:0 10px 0 rgba(27,36,48,.18), 0 30px 70px -20px rgba(0,0,0,.7)}
 h1{font-family:var(--font-display);font-size:2rem;margin:0 0 4px;letter-spacing:-.03em}
@@ -78,7 +83,7 @@ button.go:active{box-shadow:0 2px 0 #0f8e5c}
 .score{flex:1;background:#f3f6fa;border-radius:16px;padding:12px;text-align:center}
 .score b{display:block;font-family:var(--font-display);font-size:1.7rem;line-height:1.1}
 .score span{font-size:.62rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.09em}
-.back{position:fixed;z-index:5;left:14px;bottom:14px;pointer-events:auto;font-size:.78rem;
+.back{position:fixed;z-index:6;left:14px;bottom:14px;pointer-events:auto;font-size:.78rem;
   font-weight:700;color:var(--ink);background:#fff;border:0;border-radius:999px;
   padding:8px 16px;cursor:pointer;box-shadow:0 3px 0 rgba(27,36,48,.18)}
 </style>
@@ -208,7 +213,10 @@ window.GATE_RUN = {
 (function(){
   var b = document.getElementById("backBtn");
   if (!b) return;
-  if (document.referrer && history.length > 1){
+  /* history.length alone: the referrer is empty for perfectly ordinary
+     reasons - a rel="noreferrer" link, a no-referrer policy, https to
+     http - and in all of them going back still works. */
+  if (history.length > 1){
     b.hidden = false;
     b.addEventListener("click", function(){ history.back(); });
   }
@@ -222,12 +230,31 @@ window.GATE_RUN = {
 <script>
 /* An old browser ignores the module above entirely and would sit on a
    black screen for ever, so say something instead. */
-setTimeout(function(){
-  if (!window.__gateRunStarted) {
-    var n = document.getElementById("note");
-    if (n) { n.textContent = "This game needs a newer browser than this one. Everything else on the site still works."; n.style.color = "var(--bad)"; }
-  }
-}, 4000);
+/* If the game has not come up, say what is actually unknown rather than
+   blaming the browser: on a school network that blocks the CDN the
+   browser is perfectly fine and the message was simply wrong. And if it
+   turns up late - a slow connection - take the warning back rather than
+   leaving it sitting under a working game. */
+(function(){
+  var note = document.getElementById("note");
+  var said = note && note.textContent;
+  var timer = setTimeout(function(){
+    if (window.__gateRunStarted || !note) return;
+    note.textContent = "Still loading\u2026 if this stays here, either this " +
+      "connection can't reach the game's files or the browser is too old to " +
+      "run it. Everything else on the site still works.";
+    note.style.color = "var(--bad)";
+  }, 4000);
+  var check = setInterval(function(){
+    if (!window.__gateRunStarted) return;
+    clearInterval(check); clearTimeout(timer);
+    /* Only put the original text back if the game really did start; the
+       no-WebGL path writes its own message and must keep it. */
+    if (note && /Still loading/.test(note.textContent)){
+      note.textContent = said; note.style.color = "";
+    }
+  }, 250);
+})();
 </script>
 </body>
 </html>
