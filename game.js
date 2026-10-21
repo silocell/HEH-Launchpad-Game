@@ -41,14 +41,35 @@ const MAX_SPEED   = 52;
 const SPAWN_Z     = -96;    /* where a set of gates appears */
 const JUDGE_Z     = 1.5;    /* where it counts as passed */
 const LIVES       = 3;
+const MAX_LIVES   = 5;
+const POWER_EVERY = 4;      /* correct answers between pick-ups */
+
+/* Earned by playing, and that is the whole list. No coins, no shop, no
+   advert you have to watch to carry on, no "continue for 99p" when you
+   die. A game for a school should not teach anybody that losing is a
+   thing you can pay to undo. */
+const POWERS = [
+  { key:"shield", word:"SHIELD", colour:"#6ea8ff", weight:3,
+    says:"Shield up \u2014 it'll take the next wrong one" },
+  { key:"slow",   word:"SLOW",   colour:"#3ddc97", weight:3,
+    says:"Slowed down \u2014 more time to think" },
+  { key:"double", word:"x2",     colour:"#ffc857", weight:2,
+    says:"Double points for the next five" },
+  { key:"fifty",  word:"50:50",  colour:"#c79bff", weight:3,
+    says:"One wrong gate taken away on the next one" },
+  { key:"heart",  word:"+LIFE",  colour:"#ff8fa3", weight:1,
+    says:"An extra life" }
+];
 
 const el = (id) => document.getElementById(id);
 const ask = el("ask"), sub = el("sub"), flash = el("flash");
-const scoreEl = el("score"), livesEl = el("lives");
+const scoreEl = el("score"), livesEl = el("lives"), powersEl = el("powers");
 
 let renderer, scene, camera, player, glow, roadTex, gateSet = [];
 let running = false, speed = START_SPEED, score = 0, lives = LIVES;
 let lane = 1, laneX = 0, question = null, subject = "maths", judged = false;
+let orb = null, orbLane = 0, orbPower = null, sinceOrb = 0;
+let shield = false, doubleLeft = 0, fiftyNext = false;
 let best = 0;
 
 /* ---------- a label, drawn flat then hung in the world ----------
@@ -103,13 +124,87 @@ function makeGate(){
   return { mesh, canvas, tex };
 }
 
+function makeOrb(){
+  const canvas = labelCanvas();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.6, 1.35),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  mesh.visible = false;
+  scene.add(mesh);
+  return { mesh, canvas, tex };
+}
+
+function pickPower(){
+  let total = 0;
+  for (const p of POWERS) total += p.weight;
+  let n = Math.random() * total;
+  for (const p of POWERS){
+    n -= p.weight;
+    if (n <= 0) return p;
+  }
+  return POWERS[0];
+}
+
+/* Spawned half way between here and the gates, so it lands in the gap
+   AFTER one question and BEFORE the next. Putting it level with the
+   gates would have meant choosing between the power-up and the right
+   answer, which is not a decision, it is a punishment. */
+function spawnOrb(){
+  orbPower = pickPower();
+  orbLane = Math.floor(Math.random()*3);
+  drawLabel(orb.canvas, orbPower.word, orbPower.colour);
+  orb.tex.needsUpdate = true;
+  orb.mesh.position.set(LANES[orbLane], 1.5, SPAWN_Z/2);
+  orb.mesh.visible = true;
+}
+
+function takePower(p){
+  if (p.key === "shield") shield = true;
+  else if (p.key === "slow")   speed = Math.max(START_SPEED, speed - 9);
+  else if (p.key === "double") doubleLeft = 5;
+  else if (p.key === "fifty")  fiftyNext = true;
+  else if (p.key === "heart")  lives = Math.min(MAX_LIVES, lives + 1);
+  paintLives();
+  paintPowers();
+  say("<b>" + p.word + "</b><br>" + p.says);
+}
+
+function paintLives(){
+  livesEl.textContent = "\u2665".repeat(Math.max(0,lives)) +
+    "\u00b7".repeat(Math.max(0, LIVES - lives));
+}
+
+function paintPowers(){
+  const bits = [];
+  if (shield) bits.push("SHIELD");
+  if (doubleLeft > 0) bits.push("x2 \u00d7" + doubleLeft);
+  if (fiftyNext) bits.push("50:50");
+  powersEl.textContent = bits.join("  \u00b7  ");
+  powersEl.hidden = bits.length === 0;
+}
+
 function setQuestion(){
   question = QUIZ.next(subject, Math.floor(score/6));
   ask.textContent = question.text;
   sub.textContent = "";
   judged = false;
+  /* 50:50 takes one wrong gate away. The blank one is still a wrong
+     gate if you drive into it - it just stops pretending to be a
+     choice. */
+  let blanked = -1;
+  if (fiftyNext){
+    const wrong = question.options
+      .map((o, i) => (o === question.answer ? -1 : i)).filter((i) => i >= 0);
+    blanked = wrong[Math.floor(Math.random()*wrong.length)];
+    fiftyNext = false;
+    paintPowers();
+  }
+
   question.options.forEach((opt, i) => {
-    drawLabel(gateSet[i].canvas, opt, "#eef1f7");
+    drawLabel(gateSet[i].canvas, i === blanked ? "\u2014" : opt,
+              i === blanked ? "#4a5468" : "#eef1f7");
     gateSet[i].tex.needsUpdate = true;
     gateSet[i].mesh.position.set(LANES[i], 1.7, SPAWN_Z);
     gateSet[i].mesh.visible = true;
@@ -127,13 +222,27 @@ function judge(){
   judged = true;
   const chosen = question.options[lane];
   if (chosen === question.answer){
-    score++;
+    const worth = doubleLeft > 0 ? 2 : 1;
+    if (doubleLeft > 0) doubleLeft--;
+    score += worth;
     scoreEl.textContent = score;
     speed = Math.min(MAX_SPEED, speed + 1.3);
-    say("<b>Yes</b>");
+    paintPowers();
+    say(worth > 1 ? "<b>Yes</b> ×2" : "<b>Yes</b>");
+
+    sinceOrb++;
+    if (sinceOrb >= POWER_EVERY && !orb.mesh.visible){ sinceOrb = 0; spawnOrb(); }
+  } else if (shield){
+    /* Earned, so it should feel earned: no life lost, no slowdown, and
+       it says what it just did for you - and still teaches the answer,
+       because that is the point of the game. */
+    shield = false;
+    paintPowers();
+    say("<b>Shield took that one</b> — it was <b>" + question.answer + "</b>" +
+        (question.note ? "<br>" + question.note : ""), true);
   } else {
     lives--;
-    livesEl.textContent = "♥".repeat(Math.max(0,lives)) + "·".repeat(LIVES-Math.max(0,lives));
+    paintLives();
     speed = Math.max(START_SPEED, speed - 5);
     /* The teaching moment. A game that only says "wrong" teaches
        nothing, so this is the whole reason the questions carry a note. */
@@ -241,6 +350,7 @@ function build(){
   scene.add(glow);
 
   for (let i = 0; i < 3; i++) gateSet.push(makeGate());
+  orb = makeOrb();
 }
 
 let last = performance.now();
@@ -255,6 +365,15 @@ function frame(now){
   roadTex.offset.y -= move / 150 * 21;
 
   for (const g of gateSet) g.mesh.position.z += move;
+
+  if (orb.mesh.visible){
+    orb.mesh.position.z += move;
+    orb.mesh.rotation.y = Math.sin(now/300) * 0.4;
+    if (orb.mesh.position.z >= JUDGE_Z){
+      orb.mesh.visible = false;
+      if (lane === orbLane) takePower(orbPower);
+    }
+  }
 
   if (!judged && gateSet[0].mesh.position.z >= JUDGE_Z) judge();
   if (gateSet[0].mesh.position.z > 14) for (const g of gateSet) g.mesh.visible = false;
@@ -331,6 +450,15 @@ window.__gr = {
   get lives(){ return lives; },
   get running(){ return running; },
   get speed(){ return speed; },
+  get shield(){ return shield; },
+  get doubleLeft(){ return doubleLeft; },
+  get orbVisible(){ return orb && orb.mesh.visible; },
+  get orbLane(){ return orbLane; },
+  get orbPower(){ return orbPower && orbPower.key; },
+  orbZ: () => orb && orb.mesh.position.z,
+  giveOrb: (key) => { orbPower = POWERS.find(p => p.key === key); orbLane = lane;
+    drawLabel(orb.canvas, orbPower.word, orbPower.colour); orb.tex.needsUpdate = true;
+    orb.mesh.position.set(LANES[orbLane], 1.5, -12); orb.mesh.visible = true; },
   moveTo: moveTo,
   gateZ: () => gateSet[0] && gateSet[0].mesh.position.z,
   /* How much the graphics card is asked to do per frame. Unlike a

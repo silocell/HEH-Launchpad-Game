@@ -33,6 +33,8 @@ canvas{display:block;position:fixed;inset:0;z-index:0}
 #ask{text-align:center;font-family:var(--font-display);font-weight:800;
   font-size:clamp(1.3rem,5.5vw,2.6rem);letter-spacing:-.02em;line-height:1.15;
   text-shadow:0 2px 18px rgba(0,0,0,.75);margin-top:4px;min-height:1.2em}
+#powers{text-align:center;font-size:.66rem;font-weight:700;letter-spacing:.1em;
+  color:var(--good);margin:6px 0 2px;text-shadow:0 1px 10px rgba(0,0,0,.8)}
 #sub{text-align:center;font-size:.8rem;color:var(--ink-soft);margin-top:6px;min-height:1.2em}
 
 #hud{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
@@ -85,6 +87,7 @@ a.back:hover{color:var(--accent)}
     <span class="pill" id="score">0</span>
     <span class="pill" id="lives">♥♥♥</span>
   </div>
+  <div id="powers" hidden></div>
   <div id="ask"></div>
   <div id="sub"></div>
 </div>
@@ -128,12 +131,7 @@ a.back:hover{color:var(--accent)}
      complete: it plays, it keeps your best in this browser, and it
      never touches the network. Fill it in to share one high score
      across everyone who signs in to your own Supabase project.
-
-     If you forked this: replace these with your own, or set it to
-     null. The key below is a publishable one and the data behind it
-     is protected by row-level security, so it is safe to publish -
-     but it is somebody else's, and scores sent to it go nowhere.
-     See README.md for the two bits of SQL you need.
+     See README.md for the SQL.
      ------------------------------------------------------------- -->
 <script>
 window.GATE_RUN = null;
@@ -144,13 +142,12 @@ window.GATE_RUN = null;
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js"></script>
 <script>
-/* Nothing here is allowed to delay the Start button or throw into the
-   game. No config, no connection, or signed out: you still play, you
-   just have nothing to compare yourself against. */
+/* Nothing here may delay the Start button or throw into the game. No
+   config, no connection, or signed out: you still play, you just have
+   nothing to compare yourself against. */
 (function(){
   var cfg = window.GATE_RUN;
   if (!cfg || !cfg.url || !cfg.key || !window.supabase) return;
-
   var sb;
   try { sb = window.supabase.createClient(cfg.url, cfg.key); } catch(e){ return; }
 
@@ -164,7 +161,6 @@ window.GATE_RUN = null;
       }
     }, function(){});
   }
-
   /* Ask who is here first. Signed out, the score calls come back 401
      and fill the console with red that looks like a fault but is just
      somebody playing without an account - which is allowed. */
@@ -183,11 +179,11 @@ window.GATE_RUN = null;
   };
 })();
 </script>
-<script src="questions.js?b=20261021182415"></script>
+<script src="questions.js"></script>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js" } }
 </script>
-<script type="module" src="game.js?b=20261021182415"></script>
+<script type="module" src="game.js"></script>
 <script>
 /* An old browser ignores the module above entirely and would sit on a
    black screen for ever, so say something instead. */

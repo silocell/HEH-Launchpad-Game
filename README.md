@@ -48,6 +48,26 @@ Difficulty climbs with your score: the harder generators only appear
 once you've got a few right, so nobody meets algebra in the first ten
 seconds.
 
+## Power-ups
+
+Every four correct answers one appears on the track, in a lane of its
+own, in the gap *before* the next set of gates — so grabbing it is never
+a choice between the power-up and the right answer.
+
+| | What it does |
+|---|---|
+| **SHIELD** | Takes the next wrong answer for you. No life lost — and it still tells you what the answer was, because that's the point of the game. |
+| **SLOW** | Drops the speed. More time to think, which is a reward worth having here rather than a consolation. |
+| **x2** | Double points for your next five. |
+| **50:50** | Blanks one wrong gate on the next question. |
+| **+LIFE** | An extra heart, up to five. Rare. |
+
+**They are earned by playing, and that is the whole list.** No coins, no
+shop, no advert to sit through, no "continue for 99p" when you die.
+There is nothing to buy and nothing to watch, and no tracking of any
+kind. A game aimed at a school shouldn't teach anybody that losing is
+something you can pay to undo.
+
 ## Running it
 
 No build step, no dependencies to install, no server required for the
