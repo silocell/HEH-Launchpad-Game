@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gate Run</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#0b0f18; --ink:#eef1f7; --ink-soft:#9aa5bb;
+  --good:#3ddc97; --bad:#ff5d5d; --accent:#6ea8ff;
+  --font-display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
+  --font-body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);
+  font-family:var(--font-body);-webkit-user-select:none;user-select:none;touch-action:none}
+/* The canvas is added to the body last, so without a stacking order it
+   paints over the menus and swallows the click on Start - the game was
+   literally unstartable. Everything that is meant to sit in front of
+   the track is given a layer here. */
+canvas{display:block;position:fixed;inset:0;z-index:0}
+
+.layer{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;pointer-events:none;
+  padding:max(14px,env(safe-area-inset-top)) 16px 16px}
+
+/* ---- the question, kept in the page rather than in the 3d scene:
+        text drawn flat is always sharper than text on a tilted panel ---- */
+#ask{text-align:center;font-family:var(--font-display);font-weight:800;
+  font-size:clamp(1.3rem,5.5vw,2.6rem);letter-spacing:-.02em;line-height:1.15;
+  text-shadow:0 2px 18px rgba(0,0,0,.75);margin-top:4px;min-height:1.2em}
+#sub{text-align:center;font-size:.8rem;color:var(--ink-soft);margin-top:6px;min-height:1.2em}
+
+#hud{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  font-variant-numeric:tabular-nums}
+.pill{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+  border-radius:999px;padding:5px 12px;font-size:.78rem;font-weight:600;
+  backdrop-filter:blur(6px)}
+#lives{letter-spacing:3px}
+
+#flash{position:absolute;z-index:2;left:50%;top:52%;transform:translate(-50%,-50%);
+  text-align:center;max-width:min(560px,88vw);font-size:clamp(.95rem,3.4vw,1.15rem);
+  line-height:1.45;background:rgba(10,14,22,.9);border:1px solid rgba(255,255,255,.14);
+  border-radius:14px;padding:14px 18px;opacity:0;transition:opacity .18s;
+  box-shadow:0 20px 60px -20px #000}
+#flash.on{opacity:1}
+#flash b{color:var(--good)}
+#flash.wrong b{color:var(--bad)}
+
+/* ---- menus ---- */
+.sheet{position:fixed;inset:0;z-index:5;display:none;place-items:center;padding:20px;
+  background:rgba(8,11,18,.86);backdrop-filter:blur(10px);pointer-events:auto}
+.sheet.on{display:grid}
+.card{width:min(440px,100%);background:#141a26;border:1px solid rgba(255,255,255,.12);
+  border-radius:18px;padding:22px;box-shadow:0 30px 80px -30px #000}
+h1{font-family:var(--font-display);font-size:1.75rem;margin:0 0 4px;letter-spacing:-.02em}
+.lede{color:var(--ink-soft);font-size:.9rem;margin:0 0 16px;line-height:1.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+button{font:inherit;cursor:pointer;border-radius:11px;padding:11px 16px;font-weight:600;
+  border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:var(--ink)}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.on{background:var(--accent);color:#07101f;border-color:var(--accent)}
+button.go{width:100%;background:var(--good);color:#06130d;border-color:var(--good);
+  font-size:1.05rem;padding:13px}
+.small{font-size:.76rem;color:var(--ink-soft);line-height:1.5;margin:12px 0 0}
+.scores{display:flex;gap:8px;margin:14px 0 0}
+.score{flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  border-radius:12px;padding:10px;text-align:center}
+.score b{display:block;font-family:var(--font-display);font-size:1.5rem;line-height:1.1}
+.score span{font-size:.65rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em}
+a.back{position:fixed;z-index:5;left:16px;bottom:16px;pointer-events:auto;font-size:.78rem;
+  color:var(--ink-soft);text-decoration:none;background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 13px}
+a.back:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="layer">
+  <div id="hud">
+    <span class="pill" id="score">0</span>
+    <span class="pill" id="lives">♥♥♥</span>
+  </div>
+  <div id="ask"></div>
+  <div id="sub"></div>
+</div>
+<div id="flash"></div>
+
+<div class="sheet on" id="startSheet">
+  <div class="card">
+    <h1>Gate Run</h1>
+    <p class="lede">Three gates, one right answer. Steer into it before you get there.
+      Arrow keys, A and D, or tap the left and right of the screen.</p>
+    <div class="row" id="subjectRow">
+      <button data-subject="maths" class="on">Maths</button>
+      <button data-subject="english">English</button>
+      <button data-subject="both">Both</button>
+    </div>
+    <button class="go" id="startBtn">Start</button>
+    <div class="scores">
+      <div class="score"><b id="best">0</b><span>your best</span></div>
+      <div class="score"><b id="top">–</b><span>best this year</span></div>
+    </div>
+    <p class="small" id="note">It gets faster. A wrong gate costs a life and tells you why.</p>
+  </div>
+</div>
+
+<div class="sheet" id="overSheet">
+  <div class="card">
+    <h1 id="overTitle">Out of lives</h1>
+    <p class="lede" id="overLede"></p>
+    <button class="go" id="againBtn">Go again</button>
+    <div class="scores">
+      <div class="score"><b id="overScore">0</b><span>this run</span></div>
+      <div class="score"><b id="overBest">0</b><span>your best</span></div>
+    </div>
+    <p class="small" id="overNote"></p>
+  </div>
+</div>
+
+
+<!-- ------------------------------------------------------------------
+     Scores are OPTIONAL. Leave GATE_RUN as null and the game is
+     complete: it plays, it keeps your best in this browser, and it
+     never touches the network. Fill it in to share one high score
+     across everyone who signs in to your own Supabase project.
+
+     If you forked this: replace these with your own, or set it to
+     null. The key below is a publishable one and the data behind it
+     is protected by row-level security, so it is safe to publish -
+     but it is somebody else's, and scores sent to it go nowhere.
+     See README.md for the two bits of SQL you need.
+     ------------------------------------------------------------- -->
+<script>
+window.GATE_RUN = null;
+/* window.GATE_RUN = {
+     url: "https://YOUR-PROJECT.supabase.co",
+     key: "YOUR-PUBLISHABLE-KEY"
+   }; */
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js"></script>
+<script>
+/* Nothing here is allowed to delay the Start button or throw into the
+   game. No config, no connection, or signed out: you still play, you
+   just have nothing to compare yourself against. */
+(function(){
+  var cfg = window.GATE_RUN;
+  if (!cfg || !cfg.url || !cfg.key || !window.supabase) return;
+
+  var sb;
+  try { sb = window.supabase.createClient(cfg.url, cfg.key); } catch(e){ return; }
+
+  var signedIn = false;
+  function showTop(){
+    if (!signedIn) return;
+    sb.rpc("top_score", { g: "gaterun" }).then(function(r){
+      if (r && !r.error && typeof r.data === "number" && r.data > 0) {
+        var el = document.getElementById("top");
+        if (el) el.textContent = r.data;
+      }
+    }, function(){});
+  }
+
+  /* Ask who is here first. Signed out, the score calls come back 401
+     and fill the console with red that looks like a fault but is just
+     somebody playing without an account - which is allowed. */
+  sb.auth.getSession().then(function(g){
+    signedIn = !!(g && g.data && g.data.session && g.data.session.user);
+    showTop();
+  }, function(){});
+
+  window.__saveScore = function(n){
+    if (!signedIn || !n || n < 1) return;
+    sb.auth.getSession().then(function(g){
+      var u = g && g.data && g.data.session && g.data.session.user;
+      if (!u) return;
+      return sb.from("game_scores").insert({ user_id: u.id, game: "gaterun", score: n });
+    }).then(showTop).catch(function(){});
+  };
+})();
+</script>
+<script src="questions.js?b=20261021182415"></script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js" } }
+</script>
+<script type="module" src="game.js?b=20261021182415"></script>
+<script>
+/* An old browser ignores the module above entirely and would sit on a
+   black screen for ever, so say something instead. */
+setTimeout(function(){
+  if (!window.__gateRunStarted) {
+    var n = document.getElementById("note");
+    if (n) { n.textContent = "This game needs a newer browser than this one. Everything else on the site still works."; n.style.color = "var(--bad)"; }
+  }
+}, 4000);
+</script>
+</body>
+</html>
