@@ -66,10 +66,11 @@ const ask = el("ask"), sub = el("sub"), flash = el("flash");
 const scoreEl = el("score"), livesEl = el("lives"), powersEl = el("powers");
 
 let renderer, scene, camera, player, glow, gateSet = [];
-let running = false, speed = START_SPEED, score = 0, lives = LIVES;
+let running = false, paused = false, speed = START_SPEED, score = 0, lives = LIVES;
 let lane = 1, laneX = 0, question = null, subject = "maths", judged = false;
 let orb = null, orbLane = 0, orbPower = null, sinceOrb = 0;
 let blocks = null; const blockAt = []; const BLOCKS = 44;
+const wheels = [];
 let dashes = null; const dashAt = []; const DASHES = 40;
 const _flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0));
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion();
@@ -277,16 +278,29 @@ function gameOver(){
 
 /* ---------- input ---------- */
 function moveTo(n){ lane = Math.max(0, Math.min(2, n)); }
+function setPaused(on){
+  if (!running) return;
+  paused = on;
+  el("pauseSheet").classList.toggle("on", paused);
+  last = performance.now();
+}
+
 addEventListener("keydown", (e) => {
+  if (e.key === "Escape" || e.key === "Esc"){
+    e.preventDefault();
+    if (running) setPaused(!paused);
+    return;
+  }
   if (!running) {
     if (e.key === " " || e.key === "Enter") { e.preventDefault(); start(); }
     return;
   }
+  if (paused) return;
   if (e.key === "ArrowLeft"  || e.key === "a" || e.key === "A") moveTo(lane-1);
   if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") moveTo(lane+1);
 });
 addEventListener("pointerdown", (e) => {
-  if (!running) return;
+  if (!running || paused) return;
   const third = innerWidth/3;
   if (e.clientX < third) moveTo(lane-1);
   else if (e.clientX > innerWidth - third) moveTo(lane+1);
@@ -355,32 +369,51 @@ function build(){
     scene.add(rail);
   });
 
-  /* A group, not a rotated mesh with rotated children. A child inherits
-     its parent's turn, so hanging a nose cone off a body that is itself
-     tipped ninety degrees sent the nose straight up in the air - the
-     same trap the ground shadow fell into earlier. Each part is placed
-     in the group and turned on its own. */
-  player = new THREE.Group();
-  player.position.set(0, 0.72, 0);
+  /* A car, because this is a road through a city. A group, not a
+     rotated mesh with rotated children: a child inherits its parent's
+     turn, so hanging parts off a body that is itself tipped ninety
+     degrees sent them off in directions of their own - the trap the
+     ground shadow and the old nose cone both fell into. Everything
+     here is placed in the group and turned on its own.
 
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.45, 1.3, 4, 14),
-    new THREE.MeshLambertMaterial({ color: 0xff5a5f }));
-  body.rotation.x = Math.PI/2;
+     Front is -z, the way the car is travelling. */
+  player = new THREE.Group();
+  player.position.set(0, 0, 0);
+
+  const paint = new THREE.MeshLambertMaterial({ color: 0xff5a5f });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.46, 2.9), paint);
+  body.position.y = 0.46;
   player.add(body);
 
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.44, 0.85, 14),
-    new THREE.MeshLambertMaterial({ color: 0xffd166 }));
-  nose.rotation.x = -Math.PI/2;      /* tip towards -z, down the track */
-  nose.position.z = -1.22;
-  player.add(nose);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(1.3, 0.44, 1.35),
+    new THREE.MeshLambertMaterial({ color: 0x2b3a4a }));
+  cabin.position.set(0, 0.88, 0.12);
+  player.add(cabin);
 
-  const fin = new THREE.Mesh(
-    new THREE.BoxGeometry(0.12, 0.42, 0.5),
-    new THREE.MeshLambertMaterial({ color: 0xffd166 }));
-  fin.position.set(0, 0.38, 0.72);
-  player.add(fin);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 0.5), paint);
+  snout.position.set(0, 0.36, -1.6);
+  player.add(snout);
+
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
+  for (const lx of [-0.5, 0.5]){
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.1), lampMat);
+    lamp.position.set(lx, 0.42, -1.84);
+    player.add(lamp);
+  }
+
+  /* One geometry and one material shared by all four. */
+  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.26, 12);
+  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x23272e });
+  for (const wx of [-0.88, 0.88]){
+    for (const wz of [-0.95, 1.0]){
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.rotation.z = Math.PI/2;      /* axle across the car */
+      wheel.position.set(wx, 0.33, wz);
+      player.add(wheel);
+      wheels.push(wheel);
+    }
+  }
   scene.add(player);
 
   /* Not a child of the player: the player is turned on its nose to
@@ -389,6 +422,7 @@ function build(){
   glow = new THREE.Mesh(
     new THREE.CircleGeometry(0.95, 18),
     new THREE.MeshBasicMaterial({ color: 0x1b2430, transparent: true, opacity: 0.17 }));
+  glow.scale.set(1.05, 1.75, 1);   /* a car-shaped smudge, not a dot */
   glow.rotation.x = -Math.PI/2;
   glow.position.set(0, 0.03, 0);
   scene.add(glow);
@@ -447,7 +481,9 @@ function frame(now){
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last)/1000);
   last = now;
-  if (!running) { renderer.render(scene, camera); return; }
+  /* Frozen: still drawn, so it does not go black, but nothing moves
+     and nothing can be judged while you are not looking. */
+  if (!running || paused) { renderer.render(scene, camera); return; }
 
   const move = speed * dt;
 
@@ -490,7 +526,10 @@ function frame(now){
   glow.position.x = laneX;
   player.rotation.z = (target - laneX) * 0.5;
   /* A little bob, so it reads as moving rather than sliding. */
-  player.position.y = 0.72 + Math.sin(now/110) * 0.07;
+  /* Wheels turn with the road rather than at some made-up rate, so
+     slowing down actually looks like slowing down. */
+  const spin = move / 0.33;
+  for (const w of wheels) w.rotation.x -= spin;
   camera.position.x += (laneX*0.42 - camera.position.x) * Math.min(1, dt*5);
 
   renderer.render(scene, camera);
@@ -499,7 +538,9 @@ function frame(now){
 function start(){
   el("startSheet").classList.remove("on");
   el("overSheet").classList.remove("on");
-  running = true; score = 0; lives = LIVES; speed = START_SPEED; lane = 1; laneX = 0;
+  running = true; paused = false;
+  el("pauseSheet").classList.remove("on");
+  score = 0; lives = LIVES; speed = START_SPEED; lane = 1; laneX = 0;
 
   /* Everything earned last time goes. Without this a shield picked up
      in one game was still sitting there at the start of the next, and
@@ -523,7 +564,13 @@ function start(){
    one enormous frame - but it must not throw the run away either, which
    is what losing a life for answering the door would feel like. The
    frame time is clamped below, so simply resetting the clock is enough. */
-addEventListener("visibilitychange", () => { last = performance.now(); });
+/* Switching away freezes it rather than letting the run carry on
+   unwatched - and rather than throwing the run away, which is what
+   losing a life for answering the door would feel like. */
+addEventListener("visibilitychange", () => {
+  if (document.hidden && running && !paused) setPaused(true);
+  last = performance.now();
+});
 addEventListener("resize", () => {
   camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
@@ -571,6 +618,8 @@ window.__gr = {
   get lives(){ return lives; },
   get running(){ return running; },
   get speed(){ return speed; },
+  get paused(){ return paused; },
+  setPaused: (v) => setPaused(v),
   get shield(){ return shield; },
   get doubleLeft(){ return doubleLeft; },
   get orbVisible(){ return orb && orb.mesh.visible; },
@@ -592,3 +641,4 @@ window.__gr = {
 
 el("startBtn").addEventListener("click", start);
 el("againBtn").addEventListener("click", start);
+el("resumeBtn").addEventListener("click", () => setPaused(false));
