@@ -10,74 +10,77 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
-  --paper:#0b0f18; --ink:#eef1f7; --ink-soft:#9aa5bb;
-  --good:#3ddc97; --bad:#ff5d5d; --accent:#6ea8ff;
+  --ink:#1b2430; --ink-soft:#5d6b7d;
+  --good:#17b978; --bad:#ff4757; --accent:#2f6bff; --gold:#ffb703;
   --font-display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
   --font-body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  color-scheme:dark;
+  color-scheme:light;
 }
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);
+html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);
   font-family:var(--font-body);-webkit-user-select:none;user-select:none;touch-action:none}
-/* The canvas is added to the body last, so without a stacking order it
-   paints over the menus and swallows the click on Start - the game was
-   literally unstartable. Everything that is meant to sit in front of
-   the track is given a layer here. */
+/* The sky. A gradient on the page, with the canvas transparent over the
+   top of it - no geometry, no texture, and it costs precisely nothing. */
+body{background:linear-gradient(#2fa8e0 0%, #76cdf0 42%, #bfe6f5 68%, #ffd9a0 100%)}
 canvas{display:block;position:fixed;inset:0;z-index:0}
 
-.layer{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;pointer-events:none;
-  padding:max(14px,env(safe-area-inset-top)) 16px 16px}
+.layer{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;
+  pointer-events:none;padding:max(12px,env(safe-area-inset-top)) 14px 14px}
 
-/* ---- the question, kept in the page rather than in the 3d scene:
-        text drawn flat is always sharper than text on a tilted panel ---- */
-#ask{text-align:center;font-family:var(--font-display);font-weight:800;
-  font-size:clamp(1.3rem,5.5vw,2.6rem);letter-spacing:-.02em;line-height:1.15;
-  text-shadow:0 2px 18px rgba(0,0,0,.75);margin-top:4px;min-height:1.2em}
-#powers{text-align:center;font-size:.66rem;font-weight:700;letter-spacing:.1em;
-  color:var(--good);margin:6px 0 2px;text-shadow:0 1px 10px rgba(0,0,0,.8)}
-#sub{text-align:center;font-size:.8rem;color:var(--ink-soft);margin-top:6px;min-height:1.2em}
-
+/* Chunky, high-contrast, rounded - readable over a bright sky at speed. */
 #hud{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
   font-variant-numeric:tabular-nums}
-.pill{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
-  border-radius:999px;padding:5px 12px;font-size:.78rem;font-weight:600;
-  backdrop-filter:blur(6px)}
-#lives{letter-spacing:3px}
+.pill{background:#fff;border-radius:999px;padding:7px 16px;font-weight:800;
+  font-family:var(--font-display);font-size:1.05rem;color:var(--ink);
+  box-shadow:0 4px 0 rgba(27,36,48,.18), 0 8px 20px -8px rgba(27,36,48,.5)}
+#lives{letter-spacing:2px;color:var(--bad)}
 
-#flash{position:absolute;z-index:2;left:50%;top:52%;transform:translate(-50%,-50%);
-  text-align:center;max-width:min(560px,88vw);font-size:clamp(.95rem,3.4vw,1.15rem);
-  line-height:1.45;background:rgba(10,14,22,.9);border:1px solid rgba(255,255,255,.14);
-  border-radius:14px;padding:14px 18px;opacity:0;transition:opacity .18s;
-  box-shadow:0 20px 60px -20px #000}
+#powers{align-self:center;margin:10px 0 0;background:var(--gold);color:#3b2a00;
+  border-radius:999px;padding:5px 14px;font-size:.68rem;font-weight:800;
+  letter-spacing:.09em;box-shadow:0 3px 0 rgba(27,36,48,.2)}
+
+/* The question sits on a card, not floating on the sky - white text on
+   a pale horizon is unreadable, and a card is the look anyway. */
+#ask{align-self:center;margin-top:12px;max-width:min(680px,92vw);text-align:center;
+  background:#fff;border-radius:18px;padding:12px 24px;
+  font-family:var(--font-display);font-weight:800;
+  font-size:clamp(1.3rem,5.4vw,2.5rem);letter-spacing:-.02em;line-height:1.15;
+  box-shadow:0 6px 0 rgba(27,36,48,.16), 0 16px 34px -14px rgba(27,36,48,.55)}
+#ask:empty{display:none}
+#sub{text-align:center;font-size:.8rem;color:#2b3a4a;margin-top:6px;min-height:1.2em}
+
+#flash{position:absolute;z-index:2;left:50%;top:54%;transform:translate(-50%,-50%);
+  text-align:center;max-width:min(560px,88vw);font-size:clamp(.95rem,3.4vw,1.1rem);
+  line-height:1.45;background:#fff;border-radius:18px;padding:16px 20px;opacity:0;
+  transition:opacity .18s;box-shadow:0 8px 0 rgba(27,36,48,.16), 0 24px 50px -16px rgba(27,36,48,.6)}
 #flash.on{opacity:1}
 #flash b{color:var(--good)}
 #flash.wrong b{color:var(--bad)}
 
-/* ---- menus ---- */
 .sheet{position:fixed;inset:0;z-index:5;display:none;place-items:center;padding:20px;
-  background:rgba(8,11,18,.86);backdrop-filter:blur(10px);pointer-events:auto}
+  background:rgba(14,32,48,.55);backdrop-filter:blur(6px);pointer-events:auto}
 .sheet.on{display:grid}
-.card{width:min(440px,100%);background:#141a26;border:1px solid rgba(255,255,255,.12);
-  border-radius:18px;padding:22px;box-shadow:0 30px 80px -30px #000}
-h1{font-family:var(--font-display);font-size:1.75rem;margin:0 0 4px;letter-spacing:-.02em}
+.card{width:min(440px,100%);background:#fff;border-radius:26px;padding:24px;
+  box-shadow:0 10px 0 rgba(27,36,48,.18), 0 30px 70px -20px rgba(0,0,0,.7)}
+h1{font-family:var(--font-display);font-size:2rem;margin:0 0 4px;letter-spacing:-.03em}
 .lede{color:var(--ink-soft);font-size:.9rem;margin:0 0 16px;line-height:1.5}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-button{font:inherit;cursor:pointer;border-radius:11px;padding:11px 16px;font-weight:600;
-  border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:var(--ink)}
-button:hover{border-color:var(--accent);color:var(--accent)}
-button.on{background:var(--accent);color:#07101f;border-color:var(--accent)}
-button.go{width:100%;background:var(--good);color:#06130d;border-color:var(--good);
-  font-size:1.05rem;padding:13px}
-.small{font-size:.76rem;color:var(--ink-soft);line-height:1.5;margin:12px 0 0}
-.scores{display:flex;gap:8px;margin:14px 0 0}
-.score{flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
-  border-radius:12px;padding:10px;text-align:center}
-.score b{display:block;font-family:var(--font-display);font-size:1.5rem;line-height:1.1}
-.score span{font-size:.65rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em}
-.back{position:fixed;z-index:5;left:16px;bottom:16px;pointer-events:auto;font-size:.78rem;
-  color:var(--ink-soft);text-decoration:none;background:rgba(255,255,255,.07);
-  border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 13px}
-.back:hover{color:var(--accent)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+button{font:inherit;cursor:pointer;border-radius:14px;padding:11px 16px;font-weight:800;
+  border:0;background:#eef2f7;color:var(--ink);box-shadow:0 3px 0 rgba(27,36,48,.18);
+  transition:transform .06s}
+button:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(27,36,48,.18)}
+button.on{background:var(--accent);color:#fff}
+button.go{width:100%;background:var(--good);color:#fff;font-size:1.15rem;padding:15px;
+  font-family:var(--font-display);letter-spacing:.01em;box-shadow:0 5px 0 #0f8e5c}
+button.go:active{box-shadow:0 2px 0 #0f8e5c}
+.small{font-size:.76rem;color:var(--ink-soft);line-height:1.5;margin:14px 0 0}
+.scores{display:flex;gap:10px;margin:16px 0 0}
+.score{flex:1;background:#f3f6fa;border-radius:16px;padding:12px;text-align:center}
+.score b{display:block;font-family:var(--font-display);font-size:1.7rem;line-height:1.1}
+.score span{font-size:.62rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.09em}
+.back{position:fixed;z-index:5;left:14px;bottom:14px;pointer-events:auto;font-size:.78rem;
+  font-weight:700;color:var(--ink);background:#fff;border:0;border-radius:999px;
+  padding:8px 16px;cursor:pointer;box-shadow:0 3px 0 rgba(27,36,48,.18)}
 </style>
 </head>
 <body>

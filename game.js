@@ -65,10 +65,14 @@ const el = (id) => document.getElementById(id);
 const ask = el("ask"), sub = el("sub"), flash = el("flash");
 const scoreEl = el("score"), livesEl = el("lives"), powersEl = el("powers");
 
-let renderer, scene, camera, player, glow, roadTex, gateSet = [];
+let renderer, scene, camera, player, glow, gateSet = [];
 let running = false, speed = START_SPEED, score = 0, lives = LIVES;
 let lane = 1, laneX = 0, question = null, subject = "maths", judged = false;
 let orb = null, orbLane = 0, orbPower = null, sinceOrb = 0;
+let blocks = null; const blockAt = []; const BLOCKS = 44;
+let dashes = null; const dashAt = []; const DASHES = 40;
+const _flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0));
+const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion();
 let shield = false, doubleLeft = 0, fiftyNext = false;
 let best = 0;
 
@@ -85,8 +89,8 @@ function drawLabel(canvas, text, colour){
   const g = canvas.getContext("2d");
   g.clearRect(0,0,canvas.width,canvas.height);
   g.fillStyle = colour;
-  g.strokeStyle = "rgba(255,255,255,.75)";
-  g.lineWidth = 6;
+  g.strokeStyle = "rgba(27,36,48,.35)";
+  g.lineWidth = 8;
   const r = 22, w = canvas.width-12, h = canvas.height-12;
   g.beginPath();
   g.moveTo(6+r,6); g.lineTo(6+w-r,6); g.quadraticCurveTo(6+w,6,6+w,6+r);
@@ -95,7 +99,7 @@ function drawLabel(canvas, text, colour){
   g.lineTo(6,6+r); g.quadraticCurveTo(6,6,6+r,6);
   g.closePath(); g.fill(); g.stroke();
 
-  g.fillStyle = "#07101f";
+  g.fillStyle = "#17202b";
   g.textAlign = "center"; g.textBaseline = "middle";
   let size = 150;
   do { g.font = "800 " + size + "px 'Bricolage Grotesque', Trebuchet MS, sans-serif"; size -= 4; }
@@ -116,7 +120,7 @@ function makeGate(){
      rather than floating in the dark. */
   const post = new THREE.Mesh(
     new THREE.BoxGeometry(0.16, 2.2, 0.16),
-    new THREE.MeshBasicMaterial({ color: 0x2b3650 }));
+    new THREE.MeshLambertMaterial({ color: 0xe6ebf1 }));
   post.position.y = -1.6;
   mesh.add(post);
   mesh.position.y = 1.7;
@@ -204,7 +208,7 @@ function setQuestion(){
 
   question.options.forEach((opt, i) => {
     drawLabel(gateSet[i].canvas, i === blanked ? "\u2014" : opt,
-              i === blanked ? "#4a5468" : "#eef1f7");
+              i === blanked ? "#c6cdd6" : "#ffffff");
     gateSet[i].tex.needsUpdate = true;
     gateSet[i].mesh.position.set(LANES[i], 1.7, SPAWN_Z);
     gateSet[i].mesh.visible = true;
@@ -292,65 +296,150 @@ addEventListener("pointerdown", (e) => {
 /* ---------- the world ---------- */
 function build(){
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0b0f18);
-  scene.fog = new THREE.Fog(0x0b0f18, 34, 104);
+  /* The sky is a CSS gradient on the page, with the canvas transparent
+     over it. Measured both ways on 21 Oct 2026: as a background texture
+     it cost about five frames a second, because a texture stretched
+     across the whole screen is a texture lookup for every pixel on the
+     screen. The gradient is drawn once by the browser and never again. */
+  scene.fog = new THREE.Fog(0xffd9a0, 40, 108);
 
-  camera = new THREE.PerspectiveCamera(66, innerWidth/innerHeight, 0.1, 130);
+  scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+  const sun = new THREE.DirectionalLight(0xfff1dd, 1.5);
+  sun.position.set(-6, 10, 4);
+  scene.add(sun);
+
+  camera = new THREE.PerspectiveCamera(66, innerWidth/innerHeight, 0.1, 115);
   camera.position.set(0, 3.5, 7.6);
   camera.lookAt(0, 1.4, -16);
 
-  /* The lane markings are painted into the road's texture and scrolled
-     by moving the texture, rather than being 88 separate objects shoved
-     forward one at a time. That was most of the frame: eighty-eight
-     draw calls and eighty-eight position updates, every frame, to draw
-     some dashes. This is one object and one number. */
-  const rc = document.createElement("canvas");
-  rc.width = 190; rc.height = 64;
-  const rg = rc.getContext("2d");
-  rg.fillStyle = "#121a2b"; rg.fillRect(0, 0, rc.width, rc.height);
-  rg.fillStyle = "#33415f";
-  for (const x of [-2.8, 2.8]) rg.fillRect((x + 9.5) * 10 - 1.5, 0, 3, 38);
-  roadTex = new THREE.CanvasTexture(rc);
-  roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
-  roadTex.repeat.set(1, 21);
-  roadTex.colorSpace = THREE.SRGBColorSpace;
+  /* Something to run over. Without it the track hangs in a void, which
+     is the look this is getting away from. Flat, not lit: it fills most
+     of the screen, and a flat green field under an overhead sun looks
+     the same shaded or not. */
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(220, 220),
+    new THREE.MeshBasicMaterial({ color: 0x8fd46a }));
+  ground.rotation.x = -Math.PI/2;
+  ground.position.set(0, -0.06, -58);
+  scene.add(ground);
 
+  /* Flat colour, no texture. The road fills a huge part of the screen,
+     and a repeating texture on it meant a texture lookup for every one
+     of those pixels - measured at about four frames a second. The lane
+     markings are separate geometry instead, which covers a fraction of
+     the pixels and is one draw call for the lot. */
   const road = new THREE.Mesh(
     new THREE.PlaneGeometry(19, 150),
-    new THREE.MeshBasicMaterial({ map: roadTex }));
+    new THREE.MeshBasicMaterial({ color: 0x5a6b7d }));
   road.rotation.x = -Math.PI/2;
   road.position.z = -58;
   scene.add(road);
+
+  const dashGeo = new THREE.PlaneGeometry(0.34, 4.2);
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xf4f7fb });
+  dashes = new THREE.InstancedMesh(dashGeo, dashMat, DASHES);
+  dashes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let i = 0; i < DASHES; i++){
+    dashAt[i] = { x: (i % 2 ? 2.8 : -2.8), z: -Math.floor(i/2) * 8 };
+  }
+  scene.add(dashes);
+  placeDashes();
 
   /* Edge rails and the stripes that give you a sense of speed - without
      something passing you, 60 units a second looks like standing still. */
   [-9.5, 9.5].forEach((x) => {
     const rail = new THREE.Mesh(
       new THREE.BoxGeometry(0.22, 0.5, 150),
-      new THREE.MeshBasicMaterial({ color: 0x2a3b52 }));
+      new THREE.MeshBasicMaterial({ color: 0xeef3f8 }));
     rail.position.set(x, 0.25, -58);
     scene.add(rail);
   });
 
-  player = new THREE.Mesh(
-    new THREE.ConeGeometry(0.8, 1.8, 4),
-    new THREE.MeshBasicMaterial({ color: 0x6ea8ff }));
-  player.rotation.x = Math.PI/2;
-  player.position.set(0, 0.9, 0);
+  /* A group, not a rotated mesh with rotated children. A child inherits
+     its parent's turn, so hanging a nose cone off a body that is itself
+     tipped ninety degrees sent the nose straight up in the air - the
+     same trap the ground shadow fell into earlier. Each part is placed
+     in the group and turned on its own. */
+  player = new THREE.Group();
+  player.position.set(0, 0.72, 0);
+
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.45, 1.3, 4, 14),
+    new THREE.MeshLambertMaterial({ color: 0xff5a5f }));
+  body.rotation.x = Math.PI/2;
+  player.add(body);
+
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.44, 0.85, 14),
+    new THREE.MeshLambertMaterial({ color: 0xffd166 }));
+  nose.rotation.x = -Math.PI/2;      /* tip towards -z, down the track */
+  nose.position.z = -1.22;
+  player.add(nose);
+
+  const fin = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.42, 0.5),
+    new THREE.MeshLambertMaterial({ color: 0xffd166 }));
+  fin.position.set(0, 0.38, 0.72);
+  player.add(fin);
   scene.add(player);
 
   /* Not a child of the player: the player is turned on its nose to
      point down the track, and a child inherits that, so the glow ended
      up standing on its edge instead of lying on the ground. */
   glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.4, 3.4),
-    new THREE.MeshBasicMaterial({ color: 0x6ea8ff, transparent: true, opacity: 0.16 }));
+    new THREE.CircleGeometry(0.95, 18),
+    new THREE.MeshBasicMaterial({ color: 0x1b2430, transparent: true, opacity: 0.17 }));
   glow.rotation.x = -Math.PI/2;
   glow.position.set(0, 0.03, 0);
   scene.add(glow);
 
+  /* Blocks whipping past on both sides - what actually sells speed.
+     One InstancedMesh, so the whole lot is a single draw call however
+     many there are; eighty separate meshes would have been eighty. */
+  const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+  const blockMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  blocks = new THREE.InstancedMesh(blockGeo, blockMat, BLOCKS);
+  blocks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const tint = new THREE.Color();
+  for (let i = 0; i < BLOCKS; i++){
+    const side = i % 2 ? 1 : -1;
+    blockAt[i] = {
+      x: side * (15 + Math.random()*20),
+      z: -Math.random()*132,
+      w: 2 + Math.random()*5,
+      h: 3 + Math.random()*16,
+      d: 2 + Math.random()*5
+    };
+    /* Right round the wheel rather than one shade of beige - a city
+       of identical blocks is just a wall. */
+    tint.setHSL(Math.random(), 0.35 + Math.random()*0.3, 0.6 + Math.random()*0.22);
+    blocks.setColorAt(i, tint);
+  }
+  scene.add(blocks);
+  placeBlocks();
+
   for (let i = 0; i < 3; i++) gateSet.push(makeGate());
   orb = makeOrb();
+}
+
+function placeDashes(){
+  for (let i = 0; i < DASHES; i++){
+    const d = dashAt[i];
+    _v.set(1, 1, 1);
+    _m.compose(new THREE.Vector3(d.x, 0.02, d.z), _flat, _v);
+    dashes.setMatrixAt(i, _m);
+  }
+  dashes.instanceMatrix.needsUpdate = true;
+}
+
+function placeBlocks(){
+  for (let i = 0; i < BLOCKS; i++){
+    const b = blockAt[i];
+    _v.set(b.w, b.h, b.d);
+    _m.compose(new THREE.Vector3(b.x, b.h/2 - 0.06, b.z), _q, _v);
+    blocks.setMatrixAt(i, _m);
+  }
+  blocks.instanceMatrix.needsUpdate = true;
 }
 
 let last = performance.now();
@@ -362,7 +451,23 @@ function frame(now){
 
   const move = speed * dt;
 
-  roadTex.offset.y -= move / 150 * 21;
+  for (let i = 0; i < DASHES; i++){
+    const d = dashAt[i];
+    d.z += move;
+    if (d.z > 14) d.z -= DASHES/2 * 8;
+  }
+  placeDashes();
+
+  for (let i = 0; i < BLOCKS; i++){
+    const b = blockAt[i];
+    b.z += move;
+    if (b.z > 18){
+      b.z -= 150;
+      b.h = 3 + Math.random()*16;
+      b.x = (i % 2 ? 1 : -1) * (15 + Math.random()*20);
+    }
+  }
+  placeBlocks();
 
   for (const g of gateSet) g.mesh.position.z += move;
 
@@ -384,6 +489,8 @@ function frame(now){
   player.position.x = laneX;
   glow.position.x = laneX;
   player.rotation.z = (target - laneX) * 0.5;
+  /* A little bob, so it reads as moving rather than sliding. */
+  player.position.y = 0.72 + Math.sin(now/110) * 0.07;
   camera.position.x += (laneX*0.42 - camera.position.x) * Math.min(1, dt*5);
 
   renderer.render(scene, camera);
@@ -393,8 +500,20 @@ function start(){
   el("startSheet").classList.remove("on");
   el("overSheet").classList.remove("on");
   running = true; score = 0; lives = LIVES; speed = START_SPEED; lane = 1; laneX = 0;
+
+  /* Everything earned last time goes. Without this a shield picked up
+     in one game was still sitting there at the start of the next, and
+     so was any x2 left over - which quietly made the second run of the
+     evening easier than the first. */
+  shield = false; doubleLeft = 0; fiftyNext = false; sinceOrb = 0;
+  if (orb) orb.mesh.visible = false;
+  /* And the questions start forgetting from scratch, or a new game
+     opens by refusing everything the last one already asked. */
+  if (QUIZ.reset) QUIZ.reset();
+
   scoreEl.textContent = "0";
-  livesEl.textContent = "♥♥♥";
+  paintLives();
+  paintPowers();
   setQuestion();
 }
 
@@ -416,7 +535,9 @@ function saveScore(n){ window.__saveScore && window.__saveScore(n); }
 
 /* ---------- go ---------- */
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true,
+                                       powerPreference: "high-performance" });
+  renderer.setClearAlpha(0);
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
   renderer.setSize(innerWidth, innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -463,6 +584,8 @@ window.__gr = {
   gateZ: () => gateSet[0] && gateSet[0].mesh.position.z,
   /* How much the graphics card is asked to do per frame. Unlike a
      frame rate this means the same thing on every machine. */
+  scene: () => scene,
+  renderer: () => renderer,
   drawCalls: () => renderer.info.render.calls,
   triangles: () => renderer.info.render.triangles
 };

@@ -201,9 +201,15 @@ var QUIZ = (function(){
     ["The ___ tail wagged. (one dog)", "dog's", ["dogs'","dogs"], "One dog, so apostrophe then s"],
     ["I bought three ___. (more than one apple)", "apples", ["apple's","apples'"], "Just a plural - no apostrophe at all"],
     ["The ___ coats are missing. (several children)", "children's", ["childrens'","childrens"], "Children is already plural, so add 's"],
-    ["That is ___ book. (belonging to James)", "James's", ["James'","James"], "A name ending in s still takes 's"]
+    ["That is ___ book. (belonging to James)", "James's", ["James'","James"], "A name ending in s still takes 's"],
+    ["The ___ roof leaks. (one house)", "house's", ["houses'","houses"], "One house, so apostrophe then s"],
+    ["All the ___ books are new. (several teachers)", "teachers'", ["teacher's","teachers"], "More than one teacher, so the apostrophe goes after the s"],
+    ["We saw two ___ in the field. (more than one horse)", "horses", ["horse's","horses'"], "A plain plural takes no apostrophe"],
+    ["The ___ feet were muddy. (several men)", "men's", ["mens'","mens"], "Men is already plural, so add 's"],
+    ["___ my turn next.", "It's", ["Its","Its'"], "It's = it is. Its means belonging to it"],
+    ["The ___ lids are missing. (several jars)", "jars'", ["jar's","jars"], "More than one jar, so after the s"],
+    ["This is my ___ bike. (one sister)", "sister's", ["sisters'","sisters"], "One sister, so apostrophe then s"]
   ];
-
   var PLURALS = [
     ["knife", "knives", ["knifes","knive"]],
     ["child", "children", ["childs","childrens"]],
@@ -245,9 +251,18 @@ var QUIZ = (function(){
     ["vital", "essential", ["optional","unusual"]],
     ["weary", "tired", ["awake","strong"]],
     ["courageous", "brave", ["frightened","careless"]],
-    ["peculiar", "strange", ["normal","boring"]]
+    ["peculiar", "strange", ["normal","boring"]],
+    ["generous", "giving", ["mean","quiet"]],
+    ["fragile", "easily broken", ["tough","heavy"]],
+    ["abundant", "plentiful", ["scarce","tidy"]],
+    ["hostile", "unfriendly", ["welcoming","shy"]],
+    ["blunt", "not sharp", ["pointed","polite"]],
+    ["conceal", "hide", ["show","find"]],
+    ["persuade", "talk round", ["forbid","ignore"]],
+    ["gradual", "bit by bit", ["sudden","constant"]],
+    ["immense", "very large", ["minute","average"]],
+    ["content", "satisfied", ["restless","angry"]]
   ];
-
   function homophone(){
     var h = pick(HOMOPHONES);
     return q(h[0], h[1], h[2], h[3]);
@@ -275,15 +290,52 @@ var QUIZ = (function(){
 
   /* Level climbs with the score; the harder makers only appear later so
      nobody meets algebra in the first ten seconds. */
+
+  /* Picking at random with no memory is not the same as feeling random.
+     With three makers early on and only a dozen entries in some of the
+     word lists, the same question came back within a handful of goes -
+     and once you have seen it, you are not doing the maths any more,
+     you are remembering an answer. So the last two dozen are kept and
+     refused, and the same maker is not used twice running.
+
+     Bounded tries, not a loop until it finds one: when a pool is
+     genuinely smaller than the memory - the apostrophes, say - there
+     may be nothing new left, and a game that freezes looking for a
+     fresh question is far worse than one that repeats. */
+  var RECENT = [];
+  var RECENT_MAX = 24;
+  var lastMaker = null;
+
+  function freshFrom(pool, level){
+    var best = null;
+    for (var tries = 0; tries < 14; tries++){
+      var maker = pick(pool);
+      /* Two of the same kind in a row reads as "it keeps asking me
+         times tables", even when the numbers differ. */
+      if (pool.length > 1 && maker === lastMaker && tries < 7) continue;
+      var made = maker(level);
+      if (!best) best = { q: made, m: maker };
+      if (RECENT.indexOf(made.text) === -1){ best = { q: made, m: maker }; break; }
+    }
+    lastMaker = best.m;
+    RECENT.push(best.q.text);
+    while (RECENT.length > RECENT_MAX) RECENT.shift();
+    return best.q;
+  }
+
   function next(subject, level){
     var pool;
     if (subject === "maths")   pool = MATHS.slice(0, Math.min(MATHS.length, 3 + level));
     else if (subject === "english") pool = ENGLISH;
     else pool = (Math.random() < 0.5 ? MATHS.slice(0, Math.min(MATHS.length, 3 + level)) : ENGLISH);
-    return pick(pool)(level);
+    return freshFrom(pool, level);
   }
 
-  return { next: next, _makers: { timesTable:timesTable, divide:divide, addSub:addSub,
+  /* A new game starts with a clean memory - otherwise the second run of
+     the evening opens by refusing everything it has already asked. */
+  function reset(){ RECENT = []; lastMaker = null; }
+
+  return { next: next, reset: reset, _makers: { timesTable:timesTable, divide:divide, addSub:addSub,
     negatives:negatives, fractionOf:fractionOf, percent:percent, bidmas:bidmas,
     algebra:algebra, homophone:homophone, apostrophe:apostrophe, plural:plural,
     spelling:spelling, synonym:synonym } };

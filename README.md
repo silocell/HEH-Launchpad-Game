@@ -104,13 +104,21 @@ function timesTable(level){
 }
 ```
 
-Add yours to the `MATHS` or `ENGLISH` array at the bottom. Two rules
-worth keeping:
+Add yours to the `MATHS` or `ENGLISH` array at the bottom. The last two
+dozen questions are remembered and refused, and the same generator is
+never used twice running — picking at random with no memory is not the
+same as feeling random, and once you've seen a question you're
+remembering an answer rather than working it out.
+
+Three rules worth keeping:
 
 - **Wrong answers must be real mistakes.** A random number is free marks.
 - **Whole numbers only.** A gate reading `2.6666666666666665` looks
   broken, and a decimal usually means the generator has a bug. There's a
   guard that drops them, but fix the maker rather than relying on it.
+- **Give it plenty to draw from.** A list of five gets exhausted fast,
+  and the no-repeat memory can only refuse what it has an alternative
+  to.
 
 ## Scores (optional)
 
