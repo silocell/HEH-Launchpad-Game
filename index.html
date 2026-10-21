@@ -74,10 +74,10 @@ button.go{width:100%;background:var(--good);color:#06130d;border-color:var(--goo
   border-radius:12px;padding:10px;text-align:center}
 .score b{display:block;font-family:var(--font-display);font-size:1.5rem;line-height:1.1}
 .score span{font-size:.65rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em}
-a.back{position:fixed;z-index:5;left:16px;bottom:16px;pointer-events:auto;font-size:.78rem;
+.back{position:fixed;z-index:5;left:16px;bottom:16px;pointer-events:auto;font-size:.78rem;
   color:var(--ink-soft);text-decoration:none;background:rgba(255,255,255,.07);
   border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:6px 13px}
-a.back:hover{color:var(--accent)}
+.back:hover{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -111,6 +111,8 @@ a.back:hover{color:var(--accent)}
     <p class="small" id="note">It gets faster. A wrong gate costs a life and tells you why.</p>
   </div>
 </div>
+
+<button class="back" id="backBtn" hidden type="button">Back</button>
 
 <div class="sheet" id="overSheet">
   <div class="card">
@@ -185,6 +187,19 @@ window.GATE_RUN = {
       return sb.from("game_scores").insert({ user_id: u.id, game: "gaterun", score: n });
     }).then(showTop).catch(function(){});
   };
+})();
+</script>
+<script>
+/* Only shown if there is somewhere to go back TO. Opened directly, or
+   as somebody's homepage, a Back button that does nothing is worse
+   than no button. */
+(function(){
+  var b = document.getElementById("backBtn");
+  if (!b) return;
+  if (document.referrer && history.length > 1){
+    b.hidden = false;
+    b.addEventListener("click", function(){ history.back(); });
+  }
 })();
 </script>
 <script src="questions.js"></script>
