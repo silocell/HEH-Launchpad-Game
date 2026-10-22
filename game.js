@@ -75,9 +75,24 @@ const SPAWN_Z     = -96;    /* where a set of gates appears */
    free window to change lanes after visibly driving through the wrong
    gate - 160ms of it at starting speed. */
 const JUDGE_Z     = -1.4;
-const LIVES       = 3;
+const LIVES       = 3;      /* before upgrades */
 const MAX_LIVES   = 5;
-const POWER_EVERY = 4;      /* correct answers between pick-ups */
+const POWER_EVERY = 4;      /* correct answers between pick-ups, before upgrades */
+
+/* Upgrades. Bought with points - one for every gate you have ever
+   cleared, kept in the bank between runs - and they stay bought. This
+   is the shop those games put real money and adverts behind; here the
+   only way to afford anything is to have answered the questions. The
+   second chance is the "continue for 99p" that the adverts sell, earned
+   instead. */
+const UPGRADES = [
+  { key:"heart1", name:"Fourth heart",   cost:40,  says:"Start every run with four lives." },
+  { key:"heart2", name:"Fifth heart",    cost:100, says:"Five lives from the start.", needs:"heart1" },
+  { key:"shield", name:"Head start",     cost:60,  says:"Begin each run holding a shield." },
+  { key:"brakes", name:"Better brakes",  cost:50,  says:"SLOW takes more speed off." },
+  { key:"magnet", name:"Lucky",          cost:80,  says:"A power-up every three right answers instead of four." },
+  { key:"second", name:"Second chance",  cost:120, says:"Once a run, when you are out of lives, carry on with one." }
+];
 
 /* Earned by playing, and that is the whole list. No coins, no shop, no
    advert you have to watch to carry on, no "continue for 99p" when you
@@ -120,6 +135,18 @@ let convoy = null, convoyTop = null, convoyN = 0, camBack = 0;
 const convoyX = new Array(CONVOY_MAX).fill(0);
 let confetti = null; const bits = []; let bitsShown = false;
 let streak = 0, bestStreak = 0, shakeUntil = 0, lastTier = 0;
+let bank = 0, owned = {}, secondUsed = false, bankedThisRun = 0;
+function loadBank(){
+  try { bank = Math.max(0, Number(localStorage.getItem("gr-bank")) || 0); } catch(e){ bank = 0; }
+  try { owned = JSON.parse(localStorage.getItem("gr-up") || "{}") || {}; } catch(e){ owned = {}; }
+  if (typeof owned !== "object" || Array.isArray(owned)) owned = {};
+}
+function saveBank(){
+  try { localStorage.setItem("gr-bank", String(bank)); localStorage.setItem("gr-up", JSON.stringify(owned)); } catch(e){}
+}
+function has(k){ return owned[k] === true; }
+function startLives(){ return LIVES + (has("heart1") ? 1 : 0) + (has("heart2") ? 1 : 0); }
+function powerEvery(){ return has("magnet") ? 3 : POWER_EVERY; }
 /* Adaptive resolution. A machine that cannot hold the frame rate gets
    fewer pixels to draw rather than a slideshow: the render scale steps
    down (never up - a setting that flickers is worse than a low one),
@@ -264,7 +291,7 @@ function takePower(p){
      teaches somebody that the game lies to them. */
   let did = true;
   if (p.key === "shield"){ did = !shield; shield = true; }
-  else if (p.key === "slow"){ did = speed > START_SPEED; speed = Math.max(START_SPEED, speed - 9); }
+  else if (p.key === "slow"){ did = speed > START_SPEED; speed = Math.max(START_SPEED, speed - (has("brakes") ? 14 : 9)); }
   else if (p.key === "double"){ doubleLeft = 5; }
   else if (p.key === "fifty"){ did = !fiftyNext; fiftyNext = true; }
   else if (p.key === "heart"){ did = lives < MAX_LIVES; lives = Math.min(MAX_LIVES, lives + 1); }
@@ -277,7 +304,7 @@ function takePower(p){
 
 function paintLives(){
   livesEl.textContent = "\u2665".repeat(Math.max(0,lives)) +
-    "\u00b7".repeat(Math.max(0, LIVES - lives));
+    "\u00b7".repeat(Math.max(0, startLives() - lives));
 }
 
 function paintPowers(){
@@ -429,7 +456,7 @@ function judge(){
        wrong. */
 
     sinceOrb++;
-    if (sinceOrb >= POWER_EVERY && !orb.mesh.visible){ sinceOrb = 0; spawnOrb(); }
+    if (sinceOrb >= powerEvery() && !orb.mesh.visible){ sinceOrb = 0; spawnOrb(); }
   } else if (shield){
     /* Earned, so it should feel earned: no life lost, no slowdown, and
        it says what it just did for you - and still teaches the answer,
@@ -469,6 +496,22 @@ function judge(){
   nextAt = gameClock + (chosen === question.answer ? 0.12 : 1.1);
 }
 
+/* Carry on the same run with one life. The points already banked by
+   the first game-over must not bank twice, so only what is scored
+   after this point is added next time. */
+function secondChance(){
+  if (!has("second") || secondUsed || running) return;
+  secondUsed = true;
+  bankedThisRun = score;
+  lives = 1;
+  paintLives();
+  el("overSheet").classList.remove("on");
+  running = true; paused = false;
+  last = performance.now();
+  say("<b>Second chance</b> \u2014 one life. Make it count.");
+  setQuestion();
+}
+
 function gameOver(){
   running = false;
   nextAt = 0;
@@ -490,8 +533,16 @@ function gameOver(){
   paintPowers();
   const beatIt = score > best;
   if (beatIt){ best = score; try { localStorage.setItem("gr-best", String(best)); } catch(e){} }
+  /* Every gate cleared this run goes in the bank - less anything a
+     second chance already banked, since that is the same run. */
+  bank += Math.max(0, score - bankedThisRun);
+  bankedThisRun = score;
+  saveBank();
   el("overScore").textContent = score;
   el("overBest").textContent = best;
+  el("overBank").textContent = bank;
+  const second = el("secondBtn");
+  if (second) second.hidden = !(has("second") && !secondUsed);
   el("overTitle").textContent = beatIt ? "New best" : "Out of lives";
   el("overLede").textContent = score === 0
     ? "That one got away. The first few are gentle — go again."
@@ -891,12 +942,20 @@ function frame(now){
   if (anyBits || bitsShown){ placeConfetti(); bitsShown = anyBits; }
   confetti.visible = anyBits;
 
-  /* Slide rather than snap, and bank into the turn. */
+  /* Slide rather than snap, and steer into it: the nose turns towards
+     the lane it is heading for and straightens as it arrives. It used
+     to roll instead, and a car leaning into a lane change looks like
+     it is about to flip. Cars turn; they do not tilt. */
   const target = LANES[lane];
-  laneX += (target - laneX) * Math.min(1, dt*11);
+  /* 8, not 11: at the frame rate of a weak machine the faster ease
+     finished a lane change inside one frame, so the car teleported
+     sideways and the turn was never seen. The judging uses the lane,
+     not the slide, so this changes how it looks and nothing else. */
+  laneX += (target - laneX) * Math.min(1, dt*8);
   player.position.x = laneX;
   glow.position.x = laneX;
-  player.rotation.z = (target - laneX) * 0.5;
+  player.rotation.z = 0;
+  player.rotation.y = -(target - laneX) * 0.09;
   /* A little bob, so it reads as moving rather than sliding. */
   /* Wheels turn with the road rather than at some made-up rate, so
      slowing down actually looks like slowing down. */
@@ -938,7 +997,8 @@ function start(){
   el("overSheet").classList.remove("on");
   running = true; paused = false;
   el("pauseSheet").classList.remove("on");
-  score = 0; lives = LIVES; speed = START_SPEED; lane = 1; laneX = 0;
+  score = 0; lives = startLives(); speed = START_SPEED; lane = 1; laneX = 0;
+  secondUsed = false; bankedThisRun = 0;
 
   /* Everything earned last time goes. Without this a shield picked up
      in one game was still sitting there at the start of the next, and
@@ -964,7 +1024,7 @@ function start(){
   el("streak").hidden = true;
   el("pop").className = "";
   el("tier").className = "";
-  shield = false; doubleLeft = 0; fiftyNext = false; sinceOrb = 0;
+  shield = has("shield"); doubleLeft = 0; fiftyNext = false; sinceOrb = 0;
   if (orb) orb.mesh.visible = false;
   /* And the questions start forgetting from scratch, or a new game
      opens by refusing everything the last one already asked. */
@@ -1022,6 +1082,7 @@ try {
   fitCamera();
   ready = true;
   try { best = Number(localStorage.getItem("gr-best")) || 0; } catch(e){ best = 0; }
+  loadBank();
   el("best").textContent = best;
   window.__gateRunStarted = true;
   requestAnimationFrame(frame);
@@ -1092,8 +1153,13 @@ window.__gr = {
     orb.mesh.position.set(LANES[orbLane], 1.5, -12); orb.mesh.visible = true; },
   moveTo: moveTo,
   /* Test seams for measuring where the frames go. */
-  scene: () => scene,
   freezeCam: () => { camBack = 0; camera.position.set(0, 3.5, 7.6); },
+  get bank(){ return bank; },
+  get owned(){ return owned; },
+  setBank: (n) => { bank = n; saveBank(); },
+  secondChance: secondChance,
+  get carYaw(){ return player ? player.rotation.y : 0; },
+  get carRoll(){ return player ? player.rotation.z : 0; },
   gateZ: () => gateSet[0] && gateSet[0].mesh.position.z,
   /* How much the graphics card is asked to do per frame. Unlike a
      frame rate this means the same thing on every machine. */
@@ -1105,4 +1171,43 @@ window.__gr = {
 
 el("startBtn").addEventListener("click", start);
 el("againBtn").addEventListener("click", start);
+el("secondBtn").addEventListener("click", secondChance);
+
+function paintUpgrades(){
+  const list = el("upList");
+  el("upBank").textContent = bank;
+  list.textContent = "";
+  for (const u of UPGRADES){
+    const row = document.createElement("div"); row.className = "up";
+    const what = document.createElement("div"); what.className = "what";
+    const b = document.createElement("b"); b.textContent = u.name;
+    const sp = document.createElement("span"); sp.textContent = u.says;
+    what.appendChild(b); what.appendChild(sp);
+    const btn = document.createElement("button"); btn.type = "button";
+    const locked = u.needs && !has(u.needs);
+    if (has(u.key)){ btn.textContent = "\u2713 Bought"; btn.className = "owned"; btn.disabled = true; }
+    else if (locked){ btn.textContent = u.cost + " pts"; btn.disabled = true;
+      sp.textContent += " Needs " + UPGRADES.find(x => x.key === u.needs).name.toLowerCase() + " first."; }
+    else { btn.textContent = u.cost + " pts"; btn.disabled = bank < u.cost;
+      btn.addEventListener("click", () => buy(u)); }
+    row.appendChild(what); row.appendChild(btn);
+    list.appendChild(row);
+  }
+}
+function buy(u){
+  if (has(u.key) || bank < u.cost || (u.needs && !has(u.needs))) return;
+  bank -= u.cost; owned[u.key] = true; saveBank();
+  const m = el("upMsg"); if (m) m.textContent = u.name + " \u2014 bought.";
+  paintUpgrades();
+}
+el("upBtn").addEventListener("click", () => {
+  const m = el("upMsg"); if (m) m.textContent = "";
+  paintUpgrades();
+  el("overSheet").classList.remove("on");
+  el("upSheet").classList.add("on");
+});
+el("upBack").addEventListener("click", () => {
+  el("upSheet").classList.remove("on");
+  el("overSheet").classList.add("on");
+});
 el("resumeBtn").addEventListener("click", () => setPaused(false));

@@ -193,6 +193,23 @@ button.go{width:100%;background:var(--good);color:#fff;font-size:1.15rem;padding
   font-family:var(--font-display);letter-spacing:.01em;box-shadow:0 5px 0 #0f8e5c}
 button.go:active{box-shadow:0 2px 0 #0f8e5c}
 .small{font-size:.76rem;color:var(--ink-soft);line-height:1.5;margin:14px 0 0}
+button.go.second{background:var(--gold);color:#3b2a00;box-shadow:0 5px 0 #b97f00;margin-top:8px}
+button.go.second:active{box-shadow:0 2px 0 #b97f00}
+button.tab{width:100%;margin-top:12px;background:var(--card-2);font-size:.92rem}
+.scores .score{min-width:0}
+.scores .score b{font-size:1.45rem}
+/* The upgrade rows. A name, what it does, and one button that is
+   either a price or a tick. */
+.up{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--btn)}
+.up:first-child{border-top:0}
+.up .what{flex:1 1 auto;min-width:0}
+.up .what b{display:block;font-family:var(--font-display);font-size:1rem}
+.up .what span{display:block;font-size:.76rem;color:var(--ink-soft);line-height:1.4}
+.up button{flex:0 0 auto;min-width:84px;font-size:.86rem;padding:9px 12px}
+.up button.owned{background:var(--good);color:#fff;cursor:default;box-shadow:none}
+.up button[disabled]:not(.owned){opacity:.5;cursor:default}
+:root[data-theme="dark"] .up button.owned{color:#0b1120}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .up button.owned{color:#0b1120} }
 .scores{display:flex;gap:10px;margin:16px 0 0}
 .score{flex:1;background:var(--card-2);border-radius:16px;padding:12px;text-align:center}
 .score b{display:block;font-family:var(--font-display);font-size:1.7rem;line-height:1.1}
@@ -253,11 +270,28 @@ button.go:active{box-shadow:0 2px 0 #0f8e5c}
     <h1 id="overTitle">Out of lives</h1>
     <p class="lede" id="overLede"></p>
     <button class="go" id="againBtn">Go again</button>
+    <button class="go second" id="secondBtn" hidden>Use your second chance</button>
     <div class="scores">
       <div class="score"><b id="overScore">0</b><span>this run</span></div>
       <div class="score"><b id="overBest">0</b><span>your best</span></div>
+      <div class="score"><b id="overBank">0</b><span>points to spend</span></div>
     </div>
     <p class="small" id="overNote"></p>
+    <button class="tab" id="upBtn" type="button">Upgrades</button>
+  </div>
+</div>
+
+<!-- Upgrades. Bought with points you earned by clearing gates - every
+     gate you have ever cleared is a point in the bank. Nothing here
+     costs money, and there is nothing to watch. -->
+<div class="sheet" id="upSheet">
+  <div class="card">
+    <h1>Upgrades</h1>
+    <p class="lede">Every gate you clear is a point. Spend them here — they stay bought.
+      <b id="upBank">0</b> to spend.</p>
+    <div id="upList"></div>
+    <p class="small" id="upMsg"></p>
+    <button class="go" id="upBack" type="button">Back</button>
   </div>
 </div>
 

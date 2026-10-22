@@ -128,16 +128,30 @@ a choice between the power-up and the right answer.
 | | What it does |
 |---|---|
 | **SHIELD** | Takes the next wrong answer for you. No life lost — and it still tells you what the answer was, because that's the point of the game. |
-| **SLOW** | Drops the speed. More time to think, which is a reward worth having here rather than a consolation. |
+| **SLOW** | Drops the speed. More time to think, which is a reward worth having here rather than a consolation. (More with better brakes.) |
 | **x2** | Double points for your next five. |
 | **50:50** | Blanks one wrong gate on the next question. |
 | **+LIFE** | An extra heart, up to five. Rare. |
 
-**They are earned by playing, and that is the whole list.** No coins, no
-shop, no advert to sit through, no "continue for 99p" when you die.
-There is nothing to buy and nothing to watch, and no tracking of any
-kind. A game aimed at a school shouldn't teach anybody that losing is
-something you can pay to undo.
+**They are earned by playing.** No advert to sit through, nothing that
+costs money, no tracking of any kind.
+
+## Upgrades
+
+Every gate you have ever cleared is a point in the bank, and the bank
+buys permanent upgrades from the game-over screen: a fourth and fifth
+heart, a shield to start every run with, better brakes, power-ups more
+often, and a **second chance** — once a run, when you're out of lives,
+carry on with one.
+
+That last one is the "continue for 99p" every one of those games sells
+when you die. Here the only currency is questions you've answered. The
+shape is the same as the games this is modelled on, because that shape
+works — the difference is what it costs. A game aimed at a school
+shouldn't teach anybody that losing is something you can pay to undo;
+it can teach that it's something you can *earn* your way out of.
+
+Upgrades live in the browser (`localStorage`), like your best score.
 
 ## Running it
 
