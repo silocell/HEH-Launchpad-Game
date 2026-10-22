@@ -61,17 +61,29 @@ var QUIZ = (function(){
     }
     /* Ran out of sensible mistakes - nudge off the answer rather than
        leaving a blank gate. */
-    var step = 1;
-    while (out.length < 2){
+    var step = 1, tries = 0;
+    while (out.length < 2 && tries++ < 40){
       /* A gate reading "then?" looks like the game is broken, so a
          made-up wrong word doubles a letter instead - which is what a
-         real misspelling looks like. */
-      var n = (typeof answer === "number") ? answer + step
-            : String(answer).replace(/([a-z])/i, "$1$1") + (step > 1 ? "e" : "");
+         real misspelling looks like. For a word the nudge works along
+         the letters (step 1 doubles the first, step 2 the second ...)
+         so it keeps producing new strings instead of the same two.
+         The cap is a guard rail: nothing in the lists trips it today,
+         but an endless loop in a question maker hangs the whole tab,
+         and a list is the easiest thing in here for someone to edit. */
+      var n;
+      if (typeof answer === "number") n = answer + step;
+      else {
+        var k = Math.abs(step) - 1, str = String(answer), seen = 0, done = false;
+        n = str.replace(/[a-z]/gi, function(ch){
+          if (!done && seen++ === k){ done = true; return ch + ch; } return ch; });
+        if (!done) n = str + "e".repeat(Math.abs(step));
+      }
       if (String(n) !== String(answer) && !out.some(function(x){ return String(x) === String(n); })
           && (allowNegative || typeof n !== "number" || n >= 0)) out.push(n);
       step = step > 0 ? -step : -step + 1;
     }
+    while (out.length < 2) out.push(typeof answer === "number" ? answer + 100 + out.length : String(answer) + "s");
     var all = [answer, out[0], out[1]];
     /* Shuffle, or the answer is always on the left. */
     for (var j = all.length - 1; j > 0; j--){
@@ -116,23 +128,27 @@ var QUIZ = (function(){
     var big = level < 2 ? 50 : 200;
     var a = range(11, big), b = range(11, big);
     if (Math.random() < 0.5){
-      return q(a + " + " + b, a+b, [a+b-10, a+b+10, a+b-1, a-b], "");
+      return q(a + " + " + b, a+b, [a+b-10, a+b+10, a+b-1, a-b],
+        a + " + " + b + " = " + (a+b));
     }
     if (b > a){ var t = a; a = b; b = t; }
     /* Taking the small digit from the big one whichever way round it
        is - the most common subtraction mistake there is. */
     var backwards = Math.abs((a%10) - (b%10)) + Math.floor(a/10)*10 - Math.floor(b/10)*10;
-    return q(a + " − " + b, a-b, [backwards, a-b-10, a-b+10, a-b-1], "");
+    return q(a + " − " + b, a-b, [backwards, a-b-10, a-b+10, a-b-1],
+      a + " − " + b + " = " + (a-b) + (b % 10 > a % 10 ? " — the units need a borrow" : ""));
   }
 
   function negatives(level){
     var a = range(-12, -1), b = range(2, 12);
     if (Math.random() < 0.5){
       /* -7 + 10: the slip is to ignore the sign. */
-      return q(a + " + " + b, a+b, [Math.abs(a)+b, -(Math.abs(a)+b), a-b], "", true);
+      return q(a + " + " + b, a+b, [Math.abs(a)+b, -(Math.abs(a)+b), a-b],
+        "Start at " + a + " and count up " + b + ": " + (a+b), true);
     }
     /* -7 - 4: the slip is to add instead. */
-    return q(a + " − " + b, a-b, [a+b, Math.abs(a)-b, Math.abs(a-b)], "", true);
+    return q(a + " − " + b, a-b, [a+b, Math.abs(a)-b, Math.abs(a-b)],
+      "Start at " + a + " and count down " + b + ": " + (a-b), true);
   }
 
   function fractionOf(level){
@@ -151,7 +167,9 @@ var QUIZ = (function(){
        answer is always a whole number. On tens, "25% of 30" came out as
        7.5 and the gates filled up with things like 2.6666666666666665,
        which is not a mistake anybody makes and looks broken besides. */
-    var p = pick(level < 3 ? [10,25,50,100] : [5,10,15,20,25,50,75]);
+    /* No 100%: "100% of 60" prints its own answer. 20% of a multiple
+       of 20 is always whole, so it takes that slot. */
+    var p = pick(level < 3 ? [10,20,25,50] : [5,10,15,20,25,50,75]);
     var whole = 20 * range(1, level < 3 ? 10 : 20);
     var ans = whole*p/100;
     return q(p + "% of " + whole, ans,

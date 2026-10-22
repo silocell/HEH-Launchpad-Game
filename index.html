@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Gate Run</title>
 <link rel="icon" href="data:,">
+<script>
+/* The homework site keeps the player's light/dark choice in
+   localStorage, and both pages live on the same origin - so if they
+   picked dark over there, it is dark here too, before the first
+   paint. No choice made, and the device setting decides. */
+try{ var t = JSON.parse(localStorage.getItem("hl.theme"));
+     if(t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t); }catch(e){}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&display=swap">
@@ -12,16 +20,47 @@
 :root{
   --ink:#1b2430; --ink-soft:#5d6b7d;
   --good:#17b978; --bad:#ff4757; --accent:#2f6bff; --gold:#ffb703;
+  --card:#ffffff; --card-2:#f3f6fa; --btn:#eef2f7;
+  --lift:rgba(27,36,48,.18); --drop:rgba(27,36,48,.55);
+  --scrim:rgba(14,32,48,.55);
+  /* The sky. Drawn by the page, not the scene - a gradient costs
+     nothing, a sky texture cost five frames a second. The bottom stop
+     must match the scene's fog colour or the horizon shows a seam. */
+  --sky:linear-gradient(#2fa8e0 0%, #76cdf0 42%, #bfe6f5 68%, #ffd9a0 100%);
   --font-display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
   --font-body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   color-scheme:light;
+}
+/* Night. Nobody wants a noon sky at full brightness in a dark room,
+   and a night drive is a better look anyway - headlights, lit signs,
+   a city in silhouette. The scene reads the same choice (see
+   night in game.js) so the two halves agree. */
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e8ecf4; --ink-soft:#a3abbb;
+    --good:#3ddc97; --bad:#ff6b7a; --accent:#7aa0ff; --gold:#ffc857;
+    --card:#1a1f2e; --card-2:#232a3d; --btn:#2a3147;
+    --lift:rgba(0,0,0,.45); --drop:rgba(0,0,0,.7);
+    --scrim:rgba(4,6,16,.7);
+    --sky:linear-gradient(#05070f 0%, #0d1230 40%, #1c1b4a 70%, #3a2458 100%);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e8ecf4; --ink-soft:#a3abbb;
+  --good:#3ddc97; --bad:#ff6b7a; --accent:#7aa0ff; --gold:#ffc857;
+  --card:#1a1f2e; --card-2:#232a3d; --btn:#2a3147;
+  --lift:rgba(0,0,0,.45); --drop:rgba(0,0,0,.7);
+  --scrim:rgba(4,6,16,.7);
+  --sky:linear-gradient(#05070f 0%, #0d1230 40%, #1c1b4a 70%, #3a2458 100%);
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);
   font-family:var(--font-body);-webkit-user-select:none;user-select:none;touch-action:none}
 /* The sky. A gradient on the page, with the canvas transparent over the
    top of it - no geometry, no texture, and it costs precisely nothing. */
-body{background:linear-gradient(#2fa8e0 0%, #76cdf0 42%, #bfe6f5 68%, #ffd9a0 100%)}
+body{background:var(--sky)}
 canvas{display:block;position:fixed;inset:0;z-index:0}
 /* A knock when you get one wrong. Short, and on the canvas only, so
    the question card and the hud stay where you are reading them. */
@@ -45,9 +84,9 @@ canvas.knock{animation:knock .34s ease-out}
 /* Chunky, high-contrast, rounded - readable over a bright sky at speed. */
 #hud{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
   font-variant-numeric:tabular-nums}
-.pill{background:#fff;border-radius:999px;padding:7px 16px;font-weight:800;
+.pill{background:var(--card);border-radius:999px;padding:7px 16px;font-weight:800;
   font-family:var(--font-display);font-size:1.05rem;color:var(--ink);
-  box-shadow:0 4px 0 rgba(27,36,48,.18), 0 8px 20px -8px rgba(27,36,48,.5)}
+  box-shadow:0 4px 0 var(--lift), 0 8px 20px -8px var(--drop)}
 #lives{letter-spacing:2px;color:var(--bad)}
 /* The score punches when it moves. Half the appeal of these games is
    watching the number go up, so the number should behave like it
@@ -75,10 +114,13 @@ canvas.knock{animation:knock .34s ease-out}
 #pop{position:absolute;z-index:3;left:50%;top:64%;pointer-events:none;
   font-family:var(--font-display);font-weight:800;font-size:clamp(2.2rem,8vw,4rem);
   letter-spacing:-.03em;opacity:0;
+  /* The shadow is the fallback: Chrome before 123 ignores paint-order
+     on HTML text and would have drawn the stroke over the fill. */
+  text-shadow:0 2px 0 rgba(27,36,48,.45), 0 0 10px rgba(27,36,48,.35);
   -webkit-text-stroke:5px rgba(27,36,48,.5); paint-order:stroke fill}
 #pop.go{animation:leap .85s ease-out}
 #pop.good{color:#2bff9b} #pop.bad{color:#ff5468}
-@media (prefers-reduced-motion:reduce){ #pop.go{animation-duration:.01s} }
+
 
 /* A banner when the questions step up a tier, so it is a moment
    instead of something you only notice by getting one wrong. */
@@ -91,10 +133,16 @@ canvas.knock{animation:knock .34s ease-out}
 #tier{position:absolute;z-index:3;left:50%;top:34%;pointer-events:none;opacity:0;
   background:var(--accent);color:#fff;border-radius:16px;padding:10px 26px;
   font-family:var(--font-display);font-weight:800;letter-spacing:.06em;
-  font-size:clamp(1rem,4vw,1.6rem);white-space:nowrap;
+  font-size:clamp(1rem,4vw,1.6rem);max-width:88vw;text-align:center;
   box-shadow:0 6px 0 rgba(13,41,120,.5), 0 20px 44px -16px rgba(47,107,255,.9)}
 #tier.go{animation:banner 1.9s ease-out}
-@media (prefers-reduced-motion:reduce){ #tier.go{animation-duration:.6s} }
+/* Less movement: the banner and the +1 just fade, nothing leaps or
+   swells. */
+@keyframes fadeonly{ 0%{opacity:0} 15%{opacity:1} 80%{opacity:1} 100%{opacity:0} }
+@media (prefers-reduced-motion:reduce){
+  #tier.go{animation:fadeonly 1.4s ease-out;transform:translate(-50%,-50%)}
+  #pop.go{animation:fadeonly .8s ease-out;transform:translate(-50%,0)}
+}
 
 #powers{align-self:center;margin:10px 0 0;background:var(--gold);color:#3b2a00;
   border-radius:999px;padding:5px 14px;font-size:.68rem;font-weight:800;
@@ -103,50 +151,55 @@ canvas.knock{animation:knock .34s ease-out}
 /* The question sits on a card, not floating on the sky - white text on
    a pale horizon is unreadable, and a card is the look anyway. */
 #ask{align-self:center;margin-top:12px;max-width:min(680px,92vw);text-align:center;
-  background:#fff;border-radius:18px;padding:12px 24px;
+  background:var(--card);border-radius:18px;padding:12px 24px;color:var(--ink);
   font-family:var(--font-display);font-weight:800;
   font-size:clamp(1.3rem,5.4vw,2.5rem);letter-spacing:-.02em;line-height:1.15;
-  box-shadow:0 6px 0 rgba(27,36,48,.16), 0 16px 34px -14px rgba(27,36,48,.55)}
+  box-shadow:0 6px 0 var(--lift), 0 16px 34px -14px var(--drop)}
 #ask:empty{display:none}
-#sub{text-align:center;font-size:.8rem;color:#2b3a4a;margin-top:6px;min-height:1.2em}
+#sub{text-align:center;font-size:.8rem;color:var(--ink);margin-top:6px;min-height:1.2em}
 
 #flash{position:absolute;z-index:2;left:50%;top:54%;transform:translate(-50%,-50%);
   text-align:center;max-width:min(560px,88vw);font-size:clamp(.95rem,3.4vw,1.1rem);
-  line-height:1.45;background:#fff;border-radius:18px;padding:16px 20px;opacity:0;
-  transition:opacity .18s;box-shadow:0 8px 0 rgba(27,36,48,.16), 0 24px 50px -16px rgba(27,36,48,.6)}
+  line-height:1.45;background:var(--card);color:var(--ink);border-radius:18px;padding:16px 20px;opacity:0;
+  transition:opacity .18s;box-shadow:0 8px 0 var(--lift), 0 24px 50px -16px var(--drop)}
 #flash.on{opacity:1}
 #flash b{color:var(--good)}
 #flash.wrong b{color:var(--bad)}
 
 .sheet{position:fixed;inset:0;z-index:5;display:none;place-items:center;padding:20px;
   overflow:auto;-webkit-overflow-scrolling:touch;
-  background:rgba(14,32,48,.55);backdrop-filter:blur(6px);pointer-events:auto}
+  background:var(--scrim);backdrop-filter:blur(6px);pointer-events:auto}
 .sheet.on{display:grid}
 /* On a phone in landscape there is barely 330px of height; centring a
    400px card in it clipped the top and bottom with no way to reach
    them. Above that height it stays centred. */
 @media (max-height:560px){ .sheet{place-items:start center} .card{margin:auto 0} }
-.card{width:min(440px,100%);background:#fff;border-radius:26px;padding:24px;
-  box-shadow:0 10px 0 rgba(27,36,48,.18), 0 30px 70px -20px rgba(0,0,0,.7)}
+.card{width:min(440px,100%);background:var(--card);color:var(--ink);border-radius:26px;padding:24px;
+  box-shadow:0 10px 0 var(--lift), 0 30px 70px -20px rgba(0,0,0,.7)}
 h1{font-family:var(--font-display);font-size:2rem;margin:0 0 4px;letter-spacing:-.03em}
 .lede{color:var(--ink-soft);font-size:.9rem;margin:0 0 16px;line-height:1.5}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 button{font:inherit;cursor:pointer;border-radius:14px;padding:11px 16px;font-weight:800;
-  border:0;background:#eef2f7;color:var(--ink);box-shadow:0 3px 0 rgba(27,36,48,.18);
+  border:0;background:var(--btn);color:var(--ink);box-shadow:0 3px 0 var(--lift);
   transition:transform .06s}
-button:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(27,36,48,.18)}
+button:active{transform:translateY(2px);box-shadow:0 1px 0 var(--lift)}
 button.on{background:var(--accent);color:#fff}
+:root[data-theme="dark"] button.on, :root[data-theme="dark"] button.go{color:#0b1120}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) button.on,
+  :root:not([data-theme="light"]) button.go{color:#0b1120}
+}
 button.go{width:100%;background:var(--good);color:#fff;font-size:1.15rem;padding:15px;
   font-family:var(--font-display);letter-spacing:.01em;box-shadow:0 5px 0 #0f8e5c}
 button.go:active{box-shadow:0 2px 0 #0f8e5c}
 .small{font-size:.76rem;color:var(--ink-soft);line-height:1.5;margin:14px 0 0}
 .scores{display:flex;gap:10px;margin:16px 0 0}
-.score{flex:1;background:#f3f6fa;border-radius:16px;padding:12px;text-align:center}
+.score{flex:1;background:var(--card-2);border-radius:16px;padding:12px;text-align:center}
 .score b{display:block;font-family:var(--font-display);font-size:1.7rem;line-height:1.1}
 .score span{font-size:.62rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.09em}
 .back{position:fixed;z-index:6;left:14px;bottom:14px;pointer-events:auto;font-size:.78rem;
-  font-weight:700;color:var(--ink);background:#fff;border:0;border-radius:999px;
-  padding:8px 16px;cursor:pointer;box-shadow:0 3px 0 rgba(27,36,48,.18)}
+  font-weight:700;color:var(--ink);background:var(--card);border:0;border-radius:999px;
+  padding:8px 16px;cursor:pointer;box-shadow:0 3px 0 var(--lift)}
 </style>
 </head>
 <body>
@@ -158,12 +211,12 @@ button.go:active{box-shadow:0 2px 0 #0f8e5c}
   </div>
   <div id="powers" hidden></div>
   <div id="streak" hidden></div>
-  <div id="ask"></div>
+  <div id="ask" role="status" aria-live="polite"></div>
   <div id="sub"></div>
 </div>
-<div id="pop"></div>
-<div id="tier"></div>
-<div id="flash"></div>
+<div id="pop" aria-hidden="true"></div>
+<div id="tier" aria-hidden="true"></div>
+<div id="flash" role="status" aria-live="polite"></div>
 
 <div class="sheet on" id="startSheet">
   <div class="card">

@@ -110,8 +110,14 @@ questions step up a tier there's a banner for it, so it's a moment
 rather than something you work out from suddenly getting them wrong.
 
 Anyone whose machine asks for less movement (`prefers-reduced-motion`)
-gets none of the shaking or the leaping, and loses nothing: the
+gets none of the shaking, leaping or confetti, and loses nothing: the
 colours, the numbers and the words carry all of it.
+
+**It has a night.** In dark mode — the device setting, or the choice
+saved on the homework site, which shares this origin — the noon sky
+goes, and you get a night drive: a city in silhouette, lit gates,
+dark cards. Nobody wants a bright blue sky at full brightness in a dark
+room, and it's the better-looking of the two anyway.
 
 ## Power-ups
 
@@ -154,6 +160,11 @@ rendering with no graphics card at all — so a school laptop won't
 struggle. Everything that there are a lot of is one `InstancedMesh`
 apiece: the buildings, the lane markings, the convoy, the confetti.
 Eighty separate meshes would have been eighty draw calls.
+
+If a machine still can't hold the frame rate, the game lowers its own
+render scale a notch at a time rather than turning into a slideshow —
+the scene is flat-shaded blocks, so three-quarter scale looks soft, not
+broken. Measured under software rendering: 12 → 20 frames a second.
 
 ## Adding questions
 

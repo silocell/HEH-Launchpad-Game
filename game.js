@@ -120,6 +120,14 @@ let convoy = null, convoyTop = null, convoyN = 0, camBack = 0;
 const convoyX = new Array(CONVOY_MAX).fill(0);
 let confetti = null; const bits = []; let bitsShown = false;
 let streak = 0, bestStreak = 0, shakeUntil = 0, lastTier = 0;
+/* Adaptive resolution. A machine that cannot hold the frame rate gets
+   fewer pixels to draw rather than a slideshow: the render scale steps
+   down (never up - a setting that flickers is worse than a low one),
+   and the scene is flat-shaded blocks, so at three-quarter scale it
+   looks soft rather than broken. Judged on a running average, after
+   the first seconds, so a stutter while fonts load does not count. */
+let frameAvg = 0, scaleStep = 0, judgedAt = 0;
+const SCALES = [1.5, 1.0, 0.75, 0.6];
 /* Asked their machine for less movement, so the camera does not get
    knocked about either. Read once - it is a setting, not a state. */
 const calmer = typeof matchMedia === "function" &&
@@ -129,6 +137,31 @@ let dashes = null; const dashAt = []; const DASHES = 40;
 const _flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0));
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion();
 const _axis = new THREE.Vector3(0.4, 1, 0.6).normalize();
+
+/* Day or night. The page decides (its own data-theme, set from the
+   homework site's saved choice, else the device setting) and the scene
+   follows, because the sky is a CSS gradient and the fog has to meet
+   it at the horizon. Read once at load: a theme is a setting, and
+   rebuilding every material on the fly is not worth a toggle nobody
+   presses mid-run. */
+const night = (() => {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches;
+})();
+const PAL = night ? {
+  horizon: 0x3a2458,  ambient: 0x8f9ad0, ambientK: 1.0, sun: 0xc9d4ff, sunK: 0.9,
+  ground: 0x16223a,   road: 0x2a3142,  dash: 0xdfe6ff,  rail: 0xcdd6f0,
+  post: 0xb9c2d6,     lamp: 0xffe9a8,
+  /* Buildings: dark, cool, and quiet - a skyline, not a paint chart. */
+  tintS: [0.25, 0.2], tintL: [0.14, 0.14]
+} : {
+  horizon: 0xffd9a0,  ambient: 0xffffff, ambientK: 1.5, sun: 0xfff1dd, sunK: 1.5,
+  ground: 0x8fd46a,   road: 0x5a6b7d,  dash: 0xf4f7fb,  rail: 0xeef3f8,
+  post: 0xe6ebf1,     lamp: 0xfff3c4,
+  tintS: [0.35, 0.3], tintL: [0.6, 0.22]
+};
 /* Reused rather than rebuilt: these two loops ran eighty-four times a
    frame and were making a fresh Vector3 every time. */
 const _pos = new THREE.Vector3();
@@ -179,7 +212,7 @@ function makeGate(){
      rather than floating in the dark. */
   const post = new THREE.Mesh(
     new THREE.BoxGeometry(0.16, 2.2, 0.16),
-    new THREE.MeshLambertMaterial({ color: 0xe6ebf1 }));
+    new THREE.MeshLambertMaterial({ color: PAL.post }));
   post.position.y = -1.6;
   mesh.add(post);
   mesh.position.y = 1.7;
@@ -276,19 +309,7 @@ function setQuestion(){
      loop would see the old set sitting past the car and judge a
      question nobody has been shown yet. */
   judged = true;
-  for (const g of gateSet) g.mesh.visible = false;
-  /* 50:50 takes one wrong gate away. The blank one is still a wrong
-     gate if you drive into it - it just stops pretending to be a
-     choice. */
-  let blanked = -1;
-  if (fiftyNext){
-    const wrong = question.options
-      .map((o, i) => (o === question.answer ? -1 : i)).filter((i) => i >= 0);
-    blanked = wrong[Math.floor(Math.random()*wrong.length)];
-    fiftyNext = false;
-    paintPowers();
-  }
-  question.blanked = blanked;
+  question.blanked = -1;
 
   const runUp = (Math.abs(SPAWN_Z) - Math.abs(JUDGE_Z)) / speed;
   gatesAt = gameClock + Math.min(LEAD_MAX, Math.max(0.1, thinkWanted() - runUp));
@@ -296,6 +317,19 @@ function setQuestion(){
 
 function placeGates(){
   judged = false;
+  /* 50:50 takes one wrong gate away. Decided here, when the gates are
+     actually drawn, not when the question was asked: the orb is
+     collected during the lead-in, so deciding earlier meant a 50:50
+     picked up with the question already on screen quietly applied to
+     the one after. The blank one is still a wrong gate if you drive
+     into it - it just stops pretending to be a choice. */
+  if (fiftyNext){
+    const wrong = question.options
+      .map((o, i) => (o === question.answer ? -1 : i)).filter((i) => i >= 0);
+    question.blanked = wrong[Math.floor(Math.random()*wrong.length)];
+    fiftyNext = false;
+    paintPowers();
+  }
   const blanked = question.blanked;
   /* Back to plain white - the gate you drove through was tinted on
      the way past and these are the same three meshes reused. */
@@ -327,6 +361,12 @@ function pop(text, good){
   n.className = good ? "good" : "bad";
   replay(n, "go");
 }
+/* Faded to nothing is not gone: a "+2" at opacity 0 was still sitting
+   in the accessibility tree. Emptied when the animation ends. */
+for (const id of ["pop", "tier"]){
+  const n = el(id);
+  if (n) n.addEventListener("animationend", () => { n.classList.remove("go"); n.textContent = ""; });
+}
 
 function paintStreak(){
   const n = el("streak");
@@ -340,7 +380,7 @@ function paintStreak(){
 function tierBanner(){
   const n = el("tier");
   if (!n) return;
-  n.textContent = "LEVEL " + (level()+1) + " \u2014 HARDER NOW";
+  n.textContent = "LEVEL " + (level()+1);
   replay(n, "go");
 }
 
@@ -394,6 +434,10 @@ function judge(){
     /* Earned, so it should feel earned: no life lost, no slowdown, and
        it says what it just did for you - and still teaches the answer,
        because that is the point of the game. */
+    /* The streak and the convoy survive on purpose: the shield took
+       the hit, and "it saved your run" is the whole reason to want
+       one. The game-over line says "streak", not "without a mistake",
+       for exactly this reason. */
     shield = false;
     paintPowers();
     pop("SHIELD", true);
@@ -439,6 +483,7 @@ function gameOver(){
   el("streak").hidden = true;
   scoreEl.classList.remove("hot");
   if (convoy) placeConvoy();
+  if (orb) orb.mesh.visible = false;   /* not left frozen behind the sheet */
   ask.textContent = "";
   sub.textContent = "";
   shield = false; doubleLeft = 0; fiftyNext = false;
@@ -452,7 +497,7 @@ function gameOver(){
     ? "That one got away. The first few are gentle — go again."
     : "You cleared " + score + " gate" + (score===1?"":"s") + ".";
   el("overNote").textContent = bestStreak >= 3
-    ? "Longest run without a mistake: " + bestStreak + " in a row."
+    ? "Longest streak: " + bestStreak + " in a row."
     : "";
   el("overSheet").classList.add("on");
   saveScore(score);
@@ -497,10 +542,10 @@ function build(){
      it cost about five frames a second, because a texture stretched
      across the whole screen is a texture lookup for every pixel on the
      screen. The gradient is drawn once by the browser and never again. */
-  scene.fog = new THREE.Fog(0xffd9a0, 40, 108);
+  scene.fog = new THREE.Fog(PAL.horizon, 40, 108);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-  const sun = new THREE.DirectionalLight(0xfff1dd, 1.5);
+  scene.add(new THREE.AmbientLight(PAL.ambient, PAL.ambientK));
+  const sun = new THREE.DirectionalLight(PAL.sun, PAL.sunK);
   sun.position.set(-6, 10, 4);
   scene.add(sun);
 
@@ -514,7 +559,7 @@ function build(){
      the same shaded or not. */
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(220, 220),
-    new THREE.MeshBasicMaterial({ color: 0x8fd46a }));
+    new THREE.MeshBasicMaterial({ color: PAL.ground }));
   ground.rotation.x = -Math.PI/2;
   ground.position.set(0, -0.06, -58);
   scene.add(ground);
@@ -526,13 +571,13 @@ function build(){
      the pixels and is one draw call for the lot. */
   const road = new THREE.Mesh(
     new THREE.PlaneGeometry(19, 150),
-    new THREE.MeshBasicMaterial({ color: 0x5a6b7d }));
+    new THREE.MeshBasicMaterial({ color: PAL.road }));
   road.rotation.x = -Math.PI/2;
   road.position.z = -58;
   scene.add(road);
 
   const dashGeo = new THREE.PlaneGeometry(0.34, 4.2);
-  const dashMat = new THREE.MeshBasicMaterial({ color: 0xf4f7fb });
+  const dashMat = new THREE.MeshBasicMaterial({ color: PAL.dash });
   dashes = new THREE.InstancedMesh(dashGeo, dashMat, DASHES);
   dashes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   for (let i = 0; i < DASHES; i++){
@@ -546,7 +591,7 @@ function build(){
   [-9.5, 9.5].forEach((x) => {
     const rail = new THREE.Mesh(
       new THREE.BoxGeometry(0.22, 0.5, 150),
-      new THREE.MeshBasicMaterial({ color: 0xeef3f8 }));
+      new THREE.MeshBasicMaterial({ color: PAL.rail }));
     rail.position.set(x, 0.25, -58);
     scene.add(rail);
   });
@@ -577,7 +622,7 @@ function build(){
   snout.position.set(0, 0.36, -1.6);
   player.add(snout);
 
-  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
+  const lampMat = new THREE.MeshBasicMaterial({ color: PAL.lamp });
   for (const lx of [-0.5, 0.5]){
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.1), lampMat);
     lamp.position.set(lx, 0.42, -1.84);
@@ -628,7 +673,9 @@ function build(){
     };
     /* Right round the wheel rather than one shade of beige - a city
        of identical blocks is just a wall. */
-    tint.setHSL(Math.random(), 0.35 + Math.random()*0.3, 0.6 + Math.random()*0.22);
+    tint.setHSL(Math.random(),
+      PAL.tintS[0] + Math.random()*PAL.tintS[1],
+      PAL.tintL[0] + Math.random()*PAL.tintL[1]);
     blocks.setColorAt(i, tint);
   }
   scene.add(blocks);
@@ -725,6 +772,7 @@ function placeConfetti(){
 }
 
 function burst(x, y, z){
+  if (calmer) return;    /* asked for less movement: no flying cubes */
   for (let i = 0; i < CONFETTI; i++){
     const b = bits[i];
     b.life = 0.55 + Math.random()*0.35;
@@ -766,6 +814,17 @@ function frame(now){
   if (!running || paused) { renderer.render(scene, camera); return; }
 
   gameClock += dt;
+
+  frameAvg = frameAvg ? frameAvg*0.95 + dt*0.05 : dt;
+  if (gameClock > 3 && gameClock - judgedAt > 2.5 && scaleStep < SCALES.length-1){
+    judgedAt = gameClock;
+    if (1/frameAvg < 24){
+      scaleStep++;
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, SCALES[scaleStep]));
+      renderer.setSize(innerWidth, innerHeight);
+      frameAvg = 0;
+    }
+  }
 
   if (nextAt && gameClock >= nextAt){ nextAt = 0; setQuestion(); }
   if (gatesAt && gameClock >= gatesAt){ gatesAt = 0; placeGates(); }
@@ -895,6 +954,12 @@ function start(){
   if (convoy) placeConvoy();
   if (confetti) placeConfetti();
   camera.position.set(0, 3.5, 7.6);
+  /* The last game's gates, wherever they stopped. The gate you drive
+     through is no longer hidden the instant the next question is
+     asked - it slides past you green or red, which is the point of
+     tinting it - so this is the one place they get cleared. */
+  for (const g of gateSet) g.mesh.visible = false;
+  frameAvg = 0; judgedAt = 0;
   scoreEl.classList.remove("hot");
   el("streak").hidden = true;
   el("pop").className = "";
