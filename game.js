@@ -34,7 +34,38 @@ import * as THREE from "three";
    than one continuous wall of answers. */
 const LANES = [-5.6, 0, 5.6];
 const START_SPEED = 21;
-const MAX_SPEED   = 52;
+/* It used to climb by a flat 1.3 a question to a top of 52, which is a
+   straight line - and the questions get harder along a straight line
+   too, so the two met near the end and nothing there was answerable.
+   The gain now shrinks as it climbs: quick off the mark, a long
+   plateau around CRUISE, then a crawl towards the ceiling that only a
+   very long run ever reaches. */
+const CRUISE_SPEED = 38;
+const MAX_SPEED   = 44;
+/* The real fix. Speeding up is only unfair if it eats your thinking
+   time, so it is no longer allowed to: the question goes on screen
+   first and the gates are held back until what is left of the run-up
+   is worth this many seconds. You still go faster and faster; the
+   stretch of open road in front of the next gates just gets longer to
+   pay for it.
+
+   And because the questions get harder as well, the harder ones buy
+   more of it - that double squeeze was the thing that made the end
+   impossible. */
+const THINK_BASE  = 3.2;    /* seconds, at the easiest level */
+const THINK_STEP  = 0.18;   /* added per difficulty level, up to four */
+const LEAD_MAX    = 2.0;    /* longest stretch of empty road, in seconds */
+
+/* The convoy. Every right answer in a row adds a car behind you and a
+   wrong one scatters the lot - the one thing in the game you lose by
+   being careless that is not a life, so there is something to protect
+   even when you have hearts to spare. */
+const CONVOY_MAX  = 5;
+/* Wider apart than the cars are long, or the line reads as one long
+   yellow slab rather than five cars. */
+const CONVOY_GAP  = 1.45;
+const CONVOY_Z0   = 2.2;
+const CONFETTI    = 26;
 /* Close enough that the answers are readable for most of the run-up.
    At 150 they were a smudge on the horizon until the last moment, which
    made it a reaction test rather than a maths one. */
@@ -77,14 +108,27 @@ let running = false, paused = false, speed = START_SPEED, score = 0, lives = LIV
    screen, taking the explanation of the last one with it and moving the
    gates while you could not see them. Everything timed is measured
    against this instead, and it stops when the game stops. */
-let gameClock = 0, nextAt = 0, flashUntil = 0;
+let gameClock = 0, nextAt = 0, flashUntil = 0, gatesAt = 0;
+/* Correct answers, which is what difficulty now climbs with. It used
+   to climb with the score - so an x2 pick-up, the reward for playing
+   well, quietly brought the algebra forward by a couple of questions. */
+let correct = 0;
 let lane = 1, laneX = 0, question = null, subject = "maths", judged = false;
 let orb = null, orbLane = 0, orbPower = null, sinceOrb = 0;
 let blocks = null; const blockAt = []; const BLOCKS = 44;
+let convoy = null, convoyTop = null, convoyN = 0, camBack = 0;
+const convoyX = new Array(CONVOY_MAX).fill(0);
+let confetti = null; const bits = []; let bitsShown = false;
+let streak = 0, bestStreak = 0, shakeUntil = 0, lastTier = 0;
+/* Asked their machine for less movement, so the camera does not get
+   knocked about either. Read once - it is a setting, not a state. */
+const calmer = typeof matchMedia === "function" &&
+               matchMedia("(prefers-reduced-motion: reduce)").matches;
 const wheels = [];
 let dashes = null; const dashAt = []; const DASHES = 40;
 const _flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0));
 const _m = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _axis = new THREE.Vector3(0.4, 1, 0.6).normalize();
 /* Reused rather than rebuilt: these two loops ran eighty-four times a
    frame and were making a fresh Vector3 every time. */
 const _pos = new THREE.Vector3();
@@ -212,11 +256,27 @@ function paintPowers(){
   powersEl.hidden = bits.length === 0;
 }
 
+function level(){ return Math.floor(correct/7); }
+
+/* How long the player should get, from the question appearing to the
+   gate reaching the car. */
+function thinkWanted(){
+  return THINK_BASE + THINK_STEP * Math.min(4, level());
+}
+
+/* The question goes up now; the gates follow once the run-up left is
+   short enough that the two together come to thinkWanted(). At the
+   start there is no wait at all - the run-up alone is already worth
+   four and a half seconds. */
 function setQuestion(){
-  question = QUIZ.next(subject, Math.floor(score/6));
+  question = QUIZ.next(subject, level());
   ask.textContent = question.text;
   sub.textContent = "";
-  judged = false;
+  /* Stays judged until the gates are actually out there, or the frame
+     loop would see the old set sitting past the car and judge a
+     question nobody has been shown yet. */
+  judged = true;
+  for (const g of gateSet) g.mesh.visible = false;
   /* 50:50 takes one wrong gate away. The blank one is still a wrong
      gate if you drive into it - it just stops pretending to be a
      choice. */
@@ -230,6 +290,16 @@ function setQuestion(){
   }
   question.blanked = blanked;
 
+  const runUp = (Math.abs(SPAWN_Z) - Math.abs(JUDGE_Z)) / speed;
+  gatesAt = gameClock + Math.min(LEAD_MAX, Math.max(0.1, thinkWanted() - runUp));
+}
+
+function placeGates(){
+  judged = false;
+  const blanked = question.blanked;
+  /* Back to plain white - the gate you drove through was tinted on
+     the way past and these are the same three meshes reused. */
+  for (const g of gateSet) g.mesh.material.color.setHex(0xffffff);
   question.options.forEach((opt, i) => {
     drawLabel(gateSet[i].canvas, i === blanked ? "\u2014" : opt,
               i === blanked ? "#c6cdd6" : "#ffffff");
@@ -237,6 +307,41 @@ function setQuestion(){
     gateSet[i].mesh.position.set(LANES[i], 1.7, SPAWN_Z);
     gateSet[i].mesh.visible = true;
   });
+}
+
+/* The bits that make it feel like something happened: the number
+   punching, a +1 leaping off the gate, a knock when you get one
+   wrong. None of it changes what the game does - all of it changes
+   whether getting one right feels like anything. */
+function replay(node, cls){
+  if (!node) return;
+  node.classList.remove(cls);
+  void node.offsetWidth;          /* restart the animation */
+  node.classList.add(cls);
+}
+
+function pop(text, good){
+  const n = el("pop");
+  if (!n) return;
+  n.textContent = text;
+  n.className = good ? "good" : "bad";
+  replay(n, "go");
+}
+
+function paintStreak(){
+  const n = el("streak");
+  if (!n) return;
+  if (streak < 3){ n.hidden = true; return; }
+  n.hidden = false;
+  n.textContent = streak + " IN A ROW";
+  replay(n, "lit");
+}
+
+function tierBanner(){
+  const n = el("tier");
+  if (!n) return;
+  n.textContent = "LEVEL " + (level()+1) + " \u2014 HARDER NOW";
+  replay(n, "go");
 }
 
 function say(html, wrong){
@@ -253,14 +358,35 @@ function judge(){
      used to be printed on it - "48, it was 56" - names something the
      player never saw. */
   const chosen = (lane === question.blanked) ? "the blank gate" : question.options[lane];
+  /* The gate itself goes green or red as it passes you. It is the
+     thing you were looking at, so it is the thing that should
+     answer. */
+  const hit = gateSet[lane];
+  if (hit) hit.mesh.material.color.setHex(chosen === question.answer ? 0x7dffb4 : 0xff8794);
   if (chosen === question.answer){
     const worth = doubleLeft > 0 ? 2 : 1;
     if (doubleLeft > 0) doubleLeft--;
     score += worth;
+    correct++;
+    streak++;
+    if (streak > bestStreak) bestStreak = streak;
     scoreEl.textContent = score;
-    speed = Math.min(MAX_SPEED, speed + 1.3);
+    replay(scoreEl, "punch");
+    scoreEl.classList.toggle("hot", streak >= 5);
+    pop("+" + worth, true);
+    paintStreak();
+    burst(LANES[lane], 1.7, JUDGE_Z);
+    /* A car joins the line, up to the cap. */
+    if (convoyN < CONVOY_MAX){ convoyX[convoyN] = laneX; convoyN++; }
+    const wasTier = lastTier; lastTier = level();
+    if (lastTier > wasTier) tierBanner();
+    speed = Math.min(MAX_SPEED,
+                     speed + Math.max(0.25, (CRUISE_SPEED - speed) * 0.11));
     paintPowers();
-    say(worth > 1 ? "<b>Yes</b> ×2" : "<b>Yes</b>");
+    /* No "Yes" card any more. The +1 leaping off the gate and the
+       score punching say it already, and the card is wanted for the
+       one thing only the card can do - telling you why you got one
+       wrong. */
 
     sinceOrb++;
     if (sinceOrb >= POWER_EVERY && !orb.mesh.visible){ sinceOrb = 0; spawnOrb(); }
@@ -270,12 +396,22 @@ function judge(){
        because that is the point of the game. */
     shield = false;
     paintPowers();
+    pop("SHIELD", true);
     say("<b>Shield took that one</b> — it was <b>" + question.answer + "</b>" +
         (question.note ? "<br>" + question.note : ""), true);
   } else {
     lives--;
     paintLives();
     speed = Math.max(START_SPEED, speed - 5);
+    /* The convoy scatters. Losing five cars you spent five right
+       answers earning is the sting; the heart is the consequence. */
+    streak = 0;
+    scoreEl.classList.remove("hot");
+    paintStreak();
+    pop("\u2717", false);
+    shakeUntil = gameClock + 0.35;
+    if (renderer) replay(renderer.domElement, "knock");
+    convoyN = 0;
     /* The teaching moment. A game that only says "wrong" teaches
        nothing, so this is the whole reason the questions carry a note. */
     say("<b>" + chosen + "</b> — it was <b>" + question.answer + "</b>" +
@@ -292,12 +428,17 @@ function judge(){
 function gameOver(){
   running = false;
   nextAt = 0;
+  gatesAt = 0;
   /* The flash and the badges are now cleared inside the frame loop,
      which stops when the game does - so without this the red "it was
      X" card and a stale "SHIELD x2" badge sat blurred behind the
      game-over dialog until the next run. */
   flashUntil = 0;
   flash.className = "";
+  streak = 0; convoyN = 0;
+  el("streak").hidden = true;
+  scoreEl.classList.remove("hot");
+  if (convoy) placeConvoy();
   ask.textContent = "";
   sub.textContent = "";
   shield = false; doubleLeft = 0; fiftyNext = false;
@@ -310,7 +451,9 @@ function gameOver(){
   el("overLede").textContent = score === 0
     ? "That one got away. The first few are gentle — go again."
     : "You cleared " + score + " gate" + (score===1?"":"s") + ".";
-  el("overNote").textContent = "";
+  el("overNote").textContent = bestStreak >= 3
+    ? "Longest run without a mistake: " + bestStreak + " in a row."
+    : "";
   el("overSheet").classList.add("on");
   saveScore(score);
 }
@@ -491,6 +634,48 @@ function build(){
   scene.add(blocks);
   placeBlocks();
 
+  /* The convoy and the confetti are an InstancedMesh each, so the
+     whole lot of them is two draw calls however many are on screen -
+     the same trick as the buildings. */
+  convoy = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.8, 0.4, 0.98),
+    /* Flat colour, not lit. These sit close to the camera and so cover
+       a lot of pixels, and a lit material is a lighting calculation on
+       every one of them - measured at about three frames a second on a
+       machine with no graphics card, which is exactly the machine this
+       has to run on. Flat suits the look anyway. */
+    new THREE.MeshBasicMaterial({ color: 0xf5b800 }), CONVOY_MAX);
+  convoy.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  convoy.frustumCulled = false;
+  scene.add(convoy);
+  /* A dark roof on each, so they read as little cars rather than as
+     bricks. A second instanced mesh is a second draw call and nothing
+     else. */
+  convoyTop = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.56, 0.28, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0x2b3a4a }), CONVOY_MAX);
+  convoyTop.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  convoyTop.frustumCulled = false;
+  scene.add(convoyTop);
+  placeConvoy();
+
+  confetti = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.3, 0.3, 0.3),
+    /* Per-instance colour, the same way the buildings do it - no
+       vertexColors flag, which wants a colour attribute on the
+       geometry and is not what setColorAt uses. */
+    new THREE.MeshBasicMaterial({ color: 0xffffff }), CONFETTI);
+  confetti.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  confetti.frustumCulled = false;
+  const cc = new THREE.Color();
+  for (let i = 0; i < CONFETTI; i++){
+    bits[i] = { life: 0, x:0, y:0, z:0, vx:0, vy:0, vz:0, spin: Math.random()*6 };
+    cc.setHSL(Math.random(), 0.9, 0.6);
+    confetti.setColorAt(i, cc);
+  }
+  scene.add(confetti);
+  placeConfetti();
+
   for (let i = 0; i < 3; i++) gateSet.push(makeGate());
   orb = makeOrb();
 }
@@ -504,6 +689,53 @@ function placeDashes(){
     dashes.setMatrixAt(i, _m);
   }
   dashes.instanceMatrix.needsUpdate = true;
+}
+
+/* Each car follows the one in front rather than copying the player, so
+   the line bends through a lane change instead of snapping sideways in
+   one block. */
+function placeConvoy(){
+  for (let i = 0; i < CONVOY_MAX; i++){
+    const on = i < convoyN ? 1 : 0.0001;
+    const z = CONVOY_Z0 + i*CONVOY_GAP;
+    _v.set(on, on, on);
+    _pos.set(convoyX[i], 0.28, z);
+    _m.compose(_pos, _q, _v);
+    convoy.setMatrixAt(i, _m);
+    _pos.set(convoyX[i], 0.56, z + 0.06);
+    _m.compose(_pos, _q, _v);
+    convoyTop.setMatrixAt(i, _m);
+  }
+  convoy.instanceMatrix.needsUpdate = true;
+  convoyTop.instanceMatrix.needsUpdate = true;
+}
+
+function placeConfetti(){
+  for (let i = 0; i < CONFETTI; i++){
+    const b = bits[i];
+    const k = b.life > 0 ? Math.min(1, b.life*1.6) : 0.0001;
+    _v.set(k, k, k);
+    _pos.set(b.x, b.y, b.z);
+    _q.setFromAxisAngle(_axis, b.spin);
+    _m.compose(_pos, _q, _v);
+    confetti.setMatrixAt(i, _m);
+  }
+  _q.identity();
+  confetti.instanceMatrix.needsUpdate = true;
+}
+
+function burst(x, y, z){
+  for (let i = 0; i < CONFETTI; i++){
+    const b = bits[i];
+    b.life = 0.55 + Math.random()*0.35;
+    b.x = x + (Math.random()-0.5)*1.6;
+    b.y = y + (Math.random()-0.5)*1.2;
+    b.z = z;
+    b.vx = (Math.random()-0.5)*9;
+    b.vy = 2 + Math.random()*7;
+    b.vz = 4 + Math.random()*8;
+    b.spin = Math.random()*6;
+  }
 }
 
 function placeBlocks(){
@@ -536,6 +768,7 @@ function frame(now){
   gameClock += dt;
 
   if (nextAt && gameClock >= nextAt){ nextAt = 0; setQuestion(); }
+  if (gatesAt && gameClock >= gatesAt){ gatesAt = 0; placeGates(); }
   if (flashUntil && gameClock >= flashUntil){ flashUntil = 0; flash.className = ""; }
 
   const move = speed * dt;
@@ -572,6 +805,33 @@ function frame(now){
   if (!judged && gateSet[0].mesh.position.z >= JUDGE_Z) judge();
   if (gateSet[0].mesh.position.z > 14) for (const g of gateSet) g.mesh.visible = false;
 
+  /* The line of cars behind you, each one following the car in front
+     rather than the player, so it bends through a lane change. */
+  const follow = Math.min(1, dt*10);
+  if (convoyN > 0){
+    convoyX[0] += (laneX - convoyX[0]) * follow;
+    for (let i = 1; i < convoyN; i++) convoyX[i] += (convoyX[i-1] - convoyX[i]) * follow;
+    placeConvoy();
+  }
+  convoy.visible = convoyTop.visible = convoyN > 0;
+
+  /* Twenty-six matrices rewritten every frame for confetti that is not
+     on screen is twenty-six matrices wasted, and this has to run on a
+     machine with no graphics card. */
+  let anyBits = false;
+  for (let i = 0; i < CONFETTI; i++){
+    const bt = bits[i];
+    if (bt.life <= 0) continue;
+    anyBits = true;
+    bt.life -= dt;
+    bt.vy -= 22*dt;
+    bt.x += bt.vx*dt; bt.y += bt.vy*dt; bt.z += (bt.vz + speed)*dt;
+    bt.spin += dt*7;
+    if (bt.y < 0.1 || bt.z > 16) bt.life = 0;
+  }
+  if (anyBits || bitsShown){ placeConfetti(); bitsShown = anyBits; }
+  confetti.visible = anyBits;
+
   /* Slide rather than snap, and bank into the turn. */
   const target = LANES[lane];
   laneX += (target - laneX) * Math.min(1, dt*11);
@@ -583,7 +843,27 @@ function frame(now){
      slowing down actually looks like slowing down. */
   const spin = move / 0.33;
   for (const w of wheels) w.rotation.x -= spin;
-  camera.position.x += (laneX*0.42 - camera.position.x) * Math.min(1, dt*5);
+  /* Pull back as the line grows, or the cars at the end of it end up
+     behind the camera. The gates are forty-odd units away, so a couple
+     of units of pull-back costs about five per cent of their size -
+     which is why the convoy can exist at all. */
+  /* Up as well as back: looking down the line is what makes it read
+     as a line. Straight back and it fills the bottom of the screen. */
+  /* Up as well as back: looking down the line is what makes it read
+     as a line rather than a yellow smear at the bottom of the screen.
+     Kept small - the gates are the thing you have to be able to read,
+     and every unit of pull-back shrinks them. */
+  camBack += (convoyN*0.62 - camBack) * Math.min(1, dt*2.5);
+  camera.position.z = 7.6 + camBack;
+  camera.position.y = 3.5 + camBack*0.5;
+  let shakeX = 0;
+  if (shakeUntil && gameClock < shakeUntil) shakeX = calmer ? 0 : (Math.random()-0.5)*0.5;
+  else shakeUntil = 0;
+  camera.position.x += (laneX*0.42 + shakeX - camera.position.x) * Math.min(1, dt*5);
+  /* Re-aimed every frame. Without this the pull-back kept the original
+     downward tilt, which walked the convoy straight off the bottom of
+     the screen as it grew. */
+  camera.lookAt(camera.position.x*0.55, 1.5, -18);
 
   renderer.render(scene, camera);
 }
@@ -605,7 +885,20 @@ function start(){
      in one game was still sitting there at the start of the next, and
      so was any x2 left over - which quietly made the second run of the
      evening easier than the first. */
-  gameClock = 0; nextAt = 0; flashUntil = 0; flash.className = "";
+  gameClock = 0; nextAt = 0; gatesAt = 0; flashUntil = 0; flash.className = "";
+  correct = 0;
+  /* The convoy, the streak and the camera all go back too - a line of
+     five cars left over from the last game is not a line you earned. */
+  streak = 0; bestStreak = 0; convoyN = 0; camBack = 0; shakeUntil = 0; lastTier = 0;
+  convoyX.fill(0);
+  for (let i = 0; i < CONFETTI; i++) bits[i].life = 0;
+  if (convoy) placeConvoy();
+  if (confetti) placeConfetti();
+  camera.position.set(0, 3.5, 7.6);
+  scoreEl.classList.remove("hot");
+  el("streak").hidden = true;
+  el("pop").className = "";
+  el("tier").className = "";
   shield = false; doubleLeft = 0; fiftyNext = false; sinceOrb = 0;
   if (orb) orb.mesh.visible = false;
   /* And the questions start forgetting from scratch, or a new game
@@ -618,12 +911,6 @@ function start(){
   setQuestion();
 }
 
-/* Coming back to the tab after a while must not teleport you through
-   twenty gates on one enormous frame. */
-/* Coming back to the tab must not teleport you through twenty gates on
-   one enormous frame - but it must not throw the run away either, which
-   is what losing a life for answering the door would feel like. The
-   frame time is clamped below, so simply resetting the clock is enough. */
 /* Switching away freezes it rather than letting the run carry on
    unwatched - and rather than throwing the run away, which is what
    losing a life for answering the door would feel like. */
@@ -724,6 +1011,9 @@ window.__gr = {
   get paused(){ return paused; },
   get clock(){ return gameClock; },
   get nextAt(){ return nextAt; },
+  get gatesAt(){ return gatesAt; },
+  get correct(){ return correct; },
+  get thinkWanted(){ return thinkWanted(); },
   get judged(){ return judged; },
   setPaused: (v) => setPaused(v),
   get shield(){ return shield; },
@@ -736,6 +1026,9 @@ window.__gr = {
     drawLabel(orb.canvas, orbPower.word, orbPower.colour); orb.tex.needsUpdate = true;
     orb.mesh.position.set(LANES[orbLane], 1.5, -12); orb.mesh.visible = true; },
   moveTo: moveTo,
+  /* Test seams for measuring where the frames go. */
+  scene: () => scene,
+  freezeCam: () => { camBack = 0; camera.position.set(0, 3.5, 7.6); },
   gateZ: () => gateSet[0] && gateSet[0].mesh.position.z,
   /* How much the graphics card is asked to do per frame. Unlike a
      frame rate this means the same thing on every machine. */

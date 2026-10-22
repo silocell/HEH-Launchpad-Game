@@ -23,6 +23,21 @@ html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);
    top of it - no geometry, no texture, and it costs precisely nothing. */
 body{background:linear-gradient(#2fa8e0 0%, #76cdf0 42%, #bfe6f5 68%, #ffd9a0 100%)}
 canvas{display:block;position:fixed;inset:0;z-index:0}
+/* A knock when you get one wrong. Short, and on the canvas only, so
+   the question card and the hud stay where you are reading them. */
+@keyframes knock{
+  0%{transform:translate(0,0)}   18%{transform:translate(-9px,4px)}
+  36%{transform:translate(8px,-4px)} 54%{transform:translate(-6px,-3px)}
+  72%{transform:translate(5px,3px)}  100%{transform:translate(0,0)}
+}
+canvas.knock{animation:knock .34s ease-out}
+/* Everything that moves on its own is off for anyone who has asked
+   their machine for less of it. The game still tells you everything -
+   the colours, the numbers and the words do not depend on motion. */
+@media (prefers-reduced-motion:reduce){
+  canvas.knock{animation:none}
+  #score.punch, #streak.lit{animation:none}
+}
 
 .layer{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;
   pointer-events:none;padding:max(12px,env(safe-area-inset-top)) 14px 14px}
@@ -34,6 +49,52 @@ canvas{display:block;position:fixed;inset:0;z-index:0}
   font-family:var(--font-display);font-size:1.05rem;color:var(--ink);
   box-shadow:0 4px 0 rgba(27,36,48,.18), 0 8px 20px -8px rgba(27,36,48,.5)}
 #lives{letter-spacing:2px;color:var(--bad)}
+/* The score punches when it moves. Half the appeal of these games is
+   watching the number go up, so the number should behave like it
+   knows that. */
+@keyframes punch{ 0%{transform:scale(1)} 40%{transform:scale(1.38)} 100%{transform:scale(1)} }
+#score{display:inline-block;transform-origin:center}
+#score.punch{animation:punch .3s cubic-bezier(.2,1.6,.4,1)}
+#score.hot{background:var(--gold);color:#3b2a00}
+
+/* The streak. Not a score, not a life - just the thing that makes you
+   not want to get the next one wrong. */
+#streak{align-self:center;margin-top:8px;background:#ff7a1a;color:#fff;
+  border-radius:999px;padding:5px 16px;font-family:var(--font-display);
+  font-weight:800;font-size:.82rem;letter-spacing:.04em;white-space:nowrap;
+  box-shadow:0 3px 0 rgba(27,36,48,.22), 0 10px 22px -10px rgba(255,122,26,.9)}
+#streak.lit{animation:punch .3s cubic-bezier(.2,1.6,.4,1)}
+#streak[hidden]{display:none}
+
+/* The "+1" that leaps off the gate you just drove through. */
+@keyframes leap{
+  0%{opacity:0;transform:translate(-50%,0) scale(.5)}
+  22%{opacity:1;transform:translate(-50%,-26px) scale(1.25)}
+  100%{opacity:0;transform:translate(-50%,-104px) scale(1)}
+}
+#pop{position:absolute;z-index:3;left:50%;top:64%;pointer-events:none;
+  font-family:var(--font-display);font-weight:800;font-size:clamp(2.2rem,8vw,4rem);
+  letter-spacing:-.03em;opacity:0;
+  -webkit-text-stroke:5px rgba(27,36,48,.5); paint-order:stroke fill}
+#pop.go{animation:leap .85s ease-out}
+#pop.good{color:#2bff9b} #pop.bad{color:#ff5468}
+@media (prefers-reduced-motion:reduce){ #pop.go{animation-duration:.01s} }
+
+/* A banner when the questions step up a tier, so it is a moment
+   instead of something you only notice by getting one wrong. */
+@keyframes banner{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}
+  18%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}
+  30%{transform:translate(-50%,-50%) scale(1)}
+  78%{opacity:1} 100%{opacity:0;transform:translate(-50%,-50%) scale(1.04)}
+}
+#tier{position:absolute;z-index:3;left:50%;top:34%;pointer-events:none;opacity:0;
+  background:var(--accent);color:#fff;border-radius:16px;padding:10px 26px;
+  font-family:var(--font-display);font-weight:800;letter-spacing:.06em;
+  font-size:clamp(1rem,4vw,1.6rem);white-space:nowrap;
+  box-shadow:0 6px 0 rgba(13,41,120,.5), 0 20px 44px -16px rgba(47,107,255,.9)}
+#tier.go{animation:banner 1.9s ease-out}
+@media (prefers-reduced-motion:reduce){ #tier.go{animation-duration:.6s} }
 
 #powers{align-self:center;margin:10px 0 0;background:var(--gold);color:#3b2a00;
   border-radius:999px;padding:5px 14px;font-size:.68rem;font-weight:800;
@@ -96,9 +157,12 @@ button.go:active{box-shadow:0 2px 0 #0f8e5c}
     <span class="pill" id="lives">♥♥♥</span>
   </div>
   <div id="powers" hidden></div>
+  <div id="streak" hidden></div>
   <div id="ask"></div>
   <div id="sub"></div>
 </div>
+<div id="pop"></div>
+<div id="tier"></div>
 <div id="flash"></div>
 
 <div class="sheet on" id="startSheet">

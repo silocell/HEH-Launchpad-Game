@@ -89,7 +89,11 @@ var QUIZ = (function(){
   /* ---------------- maths ---------------- */
 
   function timesTable(level){
-    var top = level < 2 ? 9 : level < 4 ? 12 : 15;
+    /* It used to go to 15 at the top level. Nobody is taught the
+       fifteen times table - 14 x 13 is long multiplication, which is
+       not something you do in your head while driving at a gate. The
+       tables stop where the tables stop. */
+    var top = level < 2 ? 9 : 12;
     var a = range(2, top), b = range(2, top);
     /* The classic slips: one row up, one row down, and the add. */
     return q(a + " × " + b, a*b,
@@ -106,7 +110,10 @@ var QUIZ = (function(){
   }
 
   function addSub(level){
-    var big = level < 2 ? 50 : level < 4 ? 200 : 999;
+    /* And this used to reach 999 - "723 - 486" is column arithmetic on
+       paper, not mental arithmetic against a clock. Two digits is the
+       honest ceiling for a question you answer by steering. */
+    var big = level < 2 ? 50 : 200;
     var a = range(11, big), b = range(11, big);
     if (Math.random() < 0.5){
       return q(a + " + " + b, a+b, [a+b-10, a+b+10, a+b-1, a-b], "");
