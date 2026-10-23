@@ -219,9 +219,14 @@ button.tab{width:100%;margin-top:12px;background:var(--card-2);font-size:.92rem}
 .score{flex:1;background:var(--card-2);border-radius:16px;padding:12px;text-align:center}
 .score b{display:block;font-family:var(--font-display);font-size:1.7rem;line-height:1.1}
 .score span{font-size:.62rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.09em}
-.back{position:fixed;z-index:6;left:14px;bottom:14px;pointer-events:auto;font-size:.78rem;
-  font-weight:700;color:var(--ink);background:var(--card);border:0;border-radius:999px;
-  padding:8px 16px;cursor:pointer;box-shadow:0 3px 0 var(--lift)}
+/* Big and round so it can't be missed - "the back button is tiny" was
+   the actual complaint. Bottom-left, away from the hearts and score. */
+.back{position:fixed;z-index:6;left:14px;bottom:14px;pointer-events:auto;
+  width:56px;height:56px;border-radius:50%;display:grid;place-items:center;
+  font-size:24px;font-weight:700;color:var(--ink);background:var(--card);border:0;
+  cursor:pointer;box-shadow:0 3px 0 var(--lift)}
+.back:hover{filter:brightness(1.1)}
+.back:focus-visible{outline:3px solid #60a5fa;outline-offset:2px}
 </style>
 </head>
 <body>
@@ -259,7 +264,7 @@ button.tab{width:100%;margin-top:12px;background:var(--card-2);font-size:.92rem}
   </div>
 </div>
 
-<button class="back" id="backBtn" hidden type="button">Back</button>
+<button class="back" id="backBtn" hidden type="button" title="Back to the dashboard" aria-label="Back to the dashboard">✕</button>
 
 <div class="sheet" id="pauseSheet">
   <div class="card" style="text-align:center">
