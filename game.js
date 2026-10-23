@@ -86,12 +86,15 @@ const POWER_EVERY = 4;      /* correct answers between pick-ups, before upgrades
    second chance is the "continue for 99p" that the adverts sell, earned
    instead. */
 const UPGRADES = [
-  { key:"heart1", name:"Fourth heart",   cost:40,  says:"Start every run with four lives." },
-  { key:"heart2", name:"Fifth heart",    cost:100, says:"Five lives from the start.", needs:"heart1" },
-  { key:"shield", name:"Head start",     cost:60,  says:"Begin each run holding a shield." },
-  { key:"brakes", name:"Better brakes",  cost:50,  says:"SLOW takes more speed off." },
-  { key:"magnet", name:"Lucky",          cost:80,  says:"A power-up every three right answers instead of four." },
-  { key:"second", name:"Second chance",  cost:120, says:"Once a run, when you are out of lives, carry on with one." }
+  /* Priced for a Year 7 whose runs score ten or so: the first heart is
+     two runs away, not five. At the old prices the shop was something
+     you looked at. */
+  { key:"heart1", name:"Fourth heart",   cost:20,  says:"Start every run with four lives." },
+  { key:"heart2", name:"Fifth heart",    cost:50,  says:"Five lives from the start.", needs:"heart1" },
+  { key:"shield", name:"Head start",     cost:30,  says:"Begin each run holding a shield." },
+  { key:"brakes", name:"Better brakes",  cost:25,  says:"SLOW takes more speed off." },
+  { key:"magnet", name:"Lucky",          cost:40,  says:"A power-up every three right answers instead of four." },
+  { key:"second", name:"Second chance",  cost:60,  says:"Once a run, when you are out of lives, carry on with one." }
 ];
 
 /* Earned by playing, and that is the whole list. No coins, no shop, no
@@ -107,7 +110,7 @@ const POWERS = [
     says:"Double points for the next five" },
   { key:"fifty",  word:"50:50",  colour:"#c79bff", weight:3,
     says:"One wrong gate taken away on the next one" },
-  { key:"heart",  word:"+LIFE",  colour:"#ff8fa3", weight:1,
+  { key:"heart",  word:"+LIFE",  colour:"#ff8fa3", weight:2,
     says:"An extra life" }
 ];
 
@@ -321,17 +324,39 @@ function level(){ return Math.floor(correct/7); }
 /* How long the player should get, from the question appearing to the
    gate reaching the car. */
 function thinkWanted(){
-  return THINK_BASE + THINK_STEP * Math.min(4, level());
+  return THINK_BASE + THINK_STEP * Math.min(4, level()) + (wordy() ? 0.5 : 0);
 }
 
 /* The question goes up now; the gates follow once the run-up left is
    short enough that the two together come to thinkWanted(). At the
    start there is no wait at all - the run-up alone is already worth
    four and a half seconds. */
+/* English questions are nothing without their options: "___ going to
+   be late." gives you nothing to think about until the three words
+   arrive on the gates, which threw away the thinking time the lead-in
+   exists to give. So the three answers go under the question card
+   from the start, in their own shuffled order - not the lane order, so
+   you still have to find the one you chose on the gates, but you can
+   choose it while the road is still empty. */
+function wordy(){ return question && isNaN(Number(question.answer)); }
+function showOptions(){
+  sub.textContent = "";
+  const shown = question.options.slice();
+  /* A different order from the lanes where there is one to be had. */
+  for (let tries = 0; tries < 6; tries++){
+    for (let i = shown.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [shown[i], shown[j]] = [shown[j], shown[i]]; }
+    if (shown.some((o, i) => o !== question.options[i])) break;
+  }
+  for (const o of shown){
+    const pill = document.createElement("span"); pill.className = "opt"; pill.textContent = o;
+    sub.appendChild(pill);
+  }
+}
+
 function setQuestion(){
   question = QUIZ.next(subject, level());
   ask.textContent = question.text;
-  sub.textContent = "";
+  showOptions();
   /* Stays judged until the gates are actually out there, or the frame
      loop would see the old set sitting past the car and judge a
      question nobody has been shown yet. */
