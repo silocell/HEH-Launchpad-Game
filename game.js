@@ -62,9 +62,10 @@ const LEAD_MAX    = 2.0;    /* longest stretch of empty road, in seconds */
    even when you have hearts to spare. */
 const CONVOY_MAX  = 5;
 /* Wider apart than the cars are long, or the line reads as one long
-   yellow slab rather than five cars. */
-const CONVOY_GAP  = 1.45;
-const CONVOY_Z0   = 2.2;
+   yellow slab rather than five cars - which is exactly what 1.45 did
+   once there were five of them. */
+const CONVOY_GAP  = 1.72;
+const CONVOY_Z0   = 2.7;
 const CONFETTI    = 26;
 /* Close enough that the answers are readable for most of the run-up.
    At 150 they were a smudge on the horizon until the last moment, which
@@ -776,7 +777,7 @@ function build(){
      whole lot of them is two draw calls however many are on screen -
      the same trick as the buildings. */
   convoy = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.8, 0.4, 0.98),
+    new THREE.BoxGeometry(1.2, 0.42, 0.98),
     /* Flat colour, not lit. These sit close to the camera and so cover
        a lot of pixels, and a lit material is a lighting calculation on
        every one of them - measured at about three frames a second on a
@@ -790,7 +791,7 @@ function build(){
      bricks. A second instanced mesh is a second draw call and nothing
      else. */
   convoyTop = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.56, 0.28, 0.5),
+    new THREE.BoxGeometry(0.8, 0.3, 0.5),
     new THREE.MeshBasicMaterial({ color: 0x2b3a4a }), CONVOY_MAX);
   convoyTop.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   convoyTop.frustumCulled = false;
@@ -1017,14 +1018,18 @@ function frame(now){
      of units of pull-back costs about five per cent of their size -
      which is why the convoy can exist at all. */
   /* Up as well as back: looking down the line is what makes it read
-     as a line. Straight back and it fills the bottom of the screen. */
-  /* Up as well as back: looking down the line is what makes it read
      as a line rather than a yellow smear at the bottom of the screen.
-     Kept small - the gates are the thing you have to be able to read,
+     How far back is worked out from where the last car actually is,
+     not guessed at a fixed amount per car - at the old 0.62 each, the
+     back half of a five-car convoy hung off the bottom of the screen,
+     so you were protecting something you could not see. Capped all
+     the same: the gates are the thing you have to be able to read,
      and every unit of pull-back shrinks them. */
-  camBack += (convoyN*0.62 - camBack) * Math.min(1, dt*2.5);
+  const lastCarZ = convoyN ? CONVOY_Z0 + (convoyN - 1)*CONVOY_GAP : 0;
+  const wantBack = convoyN ? Math.min(7.0, Math.max(0, lastCarZ + 5.0 - 7.6)) : 0;
+  camBack += (wantBack - camBack) * Math.min(1, dt*2.5);
   camera.position.z = 7.6 + camBack;
-  camera.position.y = 3.5 + camBack*0.5;
+  camera.position.y = 3.5 + camBack*0.34;
   let shakeX = 0;
   if (shakeUntil && gameClock < shakeUntil) shakeX = calmer ? 0 : (Math.random()-0.5)*0.5;
   else shakeUntil = 0;
