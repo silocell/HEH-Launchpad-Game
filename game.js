@@ -197,6 +197,13 @@ const PAL = night ? {
 const _pos = new THREE.Vector3();
 let shield = false, doubleLeft = 0, fiftyNext = false;
 let best = 0;
+/* Ghost race (being tried, switched on with ?ghost=1): your best run is
+   recorded - where the car was and the score, ten times a second - and
+   a see-through car replays it next to you. Ahead of you means the old
+   you is winning. Kept on this device only (gr-ghost). */
+const GHOST_ON = /[?&]ghost=1\b/.test(location.search);
+let ghostCar = null, ghostRec = null, ghostNow = [], ghostNext = 0;
+try { ghostRec = JSON.parse(localStorage.getItem("gr-ghost") || "null"); } catch(e){ ghostRec = null; }
 
 /* ---------- a label, drawn flat then hung in the world ----------
    Canvas text keeps its own resolution, so the gate reads cleanly at a
@@ -558,6 +565,8 @@ function gameOver(){
   paintPowers();
   const beatIt = score > best;
   if (beatIt){ best = score; try { localStorage.setItem("gr-best", String(best)); } catch(e){} }
+  if (GHOST_ON && beatIt && ghostNow.length){ ghostRec = ghostNow.slice(0, 6000); try { localStorage.setItem("gr-ghost", JSON.stringify(ghostRec)); } catch(e){} }
+  if (ghostCar) ghostCar.visible = false;
   /* Every gate cleared this run goes in the bank - less anything a
      second chance already banked, since that is the same run. */
   bank += Math.max(0, score - bankedThisRun);
@@ -718,6 +727,12 @@ function build(){
     }
   }
   scene.add(player);
+  if (GHOST_ON){
+    ghostCar = player.clone(true);
+    ghostCar.traverse(function(o){ if (o.material){ o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.32; o.material.depthWrite = false; } });
+    ghostCar.visible = false;
+    scene.add(ghostCar);
+  }
 
   /* Not a child of the player: the player is turned on its nose to
      point down the track, and a child inherits that, so the glow ended
@@ -978,6 +993,17 @@ function frame(now){
      not the slide, so this changes how it looks and nothing else. */
   laneX += (target - laneX) * Math.min(1, dt*8);
   player.position.x = laneX;
+  if (GHOST_ON){
+    if (gameClock >= ghostNext){ ghostNext = gameClock + 0.1; ghostNow.push([Math.round(laneX*100)/100, score]); }
+    if (ghostCar){
+      const i = Math.floor(gameClock * 10), rec = ghostRec && ghostRec[i];
+      ghostCar.visible = !!rec;
+      if (rec){ ghostCar.position.x = rec[0];
+        /* Each gate ahead or behind is a car length or so, capped so it stays on screen. */
+        const lead = Math.max(-6, Math.min(6, rec[1] - score));
+        ghostCar.position.z += (-lead * 2.4 - ghostCar.position.z) * Math.min(1, dt*3); }
+    }
+  }
   glow.position.x = laneX;
   player.rotation.z = 0;
   player.rotation.y = -(target - laneX) * 0.09;
@@ -1023,6 +1049,7 @@ function start(){
   running = true; paused = false;
   el("pauseSheet").classList.remove("on");
   score = 0; lives = startLives(); speed = START_SPEED; lane = 1; laneX = 0;
+  ghostNow = []; ghostNext = 0; if (ghostCar) ghostCar.position.z = 0;
   secondUsed = false; bankedThisRun = 0;
 
   /* Everything earned last time goes. Without this a shield picked up
