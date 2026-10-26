@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taking you to the right page</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  :root{ --bg:#f3f5fb; --card:#fff; --ink:#151a2d; --soft:#5b6380; --rule:#e2e6f2; --accent:#4f46e5; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --bg:#0e1120; --card:#171b2e; --ink:#e7eaf6; --soft:#9aa3c2; --rule:#272d47; --accent:#8d97ff; } }
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);display:grid;place-items:center;padding:24px;
+       font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .box{background:var(--card);border:1px solid var(--rule);border-radius:16px;
+       padding:28px 26px;max-width:30rem;text-align:center}
+  h1{margin:0 0 .4rem;font-size:1.35rem;letter-spacing:-.01em}
+  p{margin:0 0 1rem;color:var(--soft)}
+  code{background:var(--rule);padding:.1rem .35rem;border-radius:5px;font-size:.9em;color:var(--ink)}
+  a.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;
+        font-weight:600;padding:9px 18px;border-radius:9px}
+  a.btn:focus-visible{outline:3px solid #fde68a;outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="box" id="box" hidden>
+  <h1>That page has moved</h1>
+  <p id="why">The address you used is an old one.</p>
+  <p><a class="btn" href="https://civilinitiatives.org/">Go to the Launchpad</a></p>
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   The site used to live at silocell.github.io/HEH-Homework/ and the
+   games at /HEH-Launchpad-Game/ and so on. Each of those is now a
+   domain of its own, and GitHub redirects the old address here while
+   keeping the whole path - so a bookmark arrives as
+   civilinitiatives.org/HEH-Homework/notes.html, which is not a page
+   that exists. The old project folder is simply one segment too many.
+
+   Strip it and send them on. Anyone arriving at a genuinely missing
+   page sees the card instead.
+   --------------------------------------------------------------- */
+(function(){
+  var m = location.pathname.match(/^\/HEH-[A-Za-z-]+\/(.*)$/);
+  if (m) {
+    var to = "/" + m[1] + location.search + location.hash;
+    location.replace(to);
+    return;                       // replace(), so Back doesn't bounce
+  }
+  /* Nothing to fix - this really is a missing page. */
+  document.getElementById("why").textContent =
+    "There's nothing at " + location.pathname + " on this site.";
+  document.getElementById("box").hidden = false;
+})();
+</script>
+</body>
+</html>
