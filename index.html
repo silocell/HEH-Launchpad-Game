@@ -10,7 +10,7 @@
    localStorage, and both pages live on the same origin - so if they
    picked dark over there, it is dark here too, before the first
    paint. No choice made, and the device setting decides. */
-try{ var t = JSON.parse(localStorage.getItem("hl.theme"));
+try{ var m = document.cookie.match(/(?:^|; )hl_theme=(dark|light|system)/), t = m ? m[1] : JSON.parse(localStorage.getItem("hl.theme")); /* the cookie is shared by every *.civilinitiatives.org site */
      if(t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t); }catch(e){}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
