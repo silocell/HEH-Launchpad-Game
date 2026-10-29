@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "org.civilinitiatives.launchpad",
+    "sha256_cert_fingerprints": ["C1:B2:9F:21:96:9E:19:D8:D7:35:8A:10:47:EA:7E:A4:44:83:4E:AA:97:33:B4:05:0F:A5:92:65:6C:07:CE:8F"]
+  }
+}]
