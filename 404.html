@@ -61,7 +61,7 @@
 (function(){
   var m = location.pathname.match(/^\/HEH-[A-Za-z-]+\/(.*)$/);
   if (m) {
-    location.replace("/" + m[1] + location.search + location.hash);
+    location.replace("/" + m[1].replace(/^[\/\\]+/, "") + location.search + location.hash);   /* no "//host": that would leave the site */
     return;                       // replace(), so Back doesn't bounce
   }
   document.getElementById("box").hidden = false;
