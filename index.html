@@ -328,8 +328,10 @@ button.tab{width:100%;margin-top:12px;background:var(--card-2);font-size:.92rem}
    project, and your players will not have one. The game plays fully
    either way. The SQL you need is in README.md. */
 window.GATE_RUN = {
-  url: "https://lkyfpvlrqgezgitfmpqo.supabase.co",
-  key: "sb_publishable_BTzbP_oOZnfvCgs4UBJYXA_WCTyT88M"
+  /* the Launchpad's own server (the old hosted project it used to point at is gone,
+     so "best this year" never showed and scores weren't saved) */
+  url: "https://hehs-live.duckdns.org",
+  key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzkyODMyMjkwLCJleHAiOjIxMDgxOTIyOTB9.7gFhQa5RBwVtiOPLO7Qf2-aVEbkd5xgpLiN1J06Gybo"
 };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js"></script>
@@ -341,7 +343,9 @@ window.GATE_RUN = {
   var cfg = window.GATE_RUN;
   if (!cfg || !cfg.url || !cfg.key || !window.supabase) return;
   var sb;
-  try { sb = window.supabase.createClient(cfg.url, cfg.key); } catch(e){ return; }
+  /* the sign-in is shared across *.civilinitiatives.org through auth-store.js */
+  try { sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true,
+          storage: (window.HEHAuth && window.HEHAuth.storage) || undefined } }); } catch(e){ return; }
 
   var signedIn = false;
   function showTop(){
