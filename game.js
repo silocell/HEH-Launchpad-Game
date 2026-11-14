@@ -301,6 +301,7 @@ function takePower(p){
      the slowest - and announcing "Shield up" when nothing changed
      teaches somebody that the game lies to them. */
   let did = true;
+  if (window.GRSound) GRSound.power();
   if (p.key === "shield"){ did = !shield; shield = true; }
   else if (p.key === "slow"){ did = speed > START_SPEED; speed = Math.max(START_SPEED, speed - (has("brakes") ? 14 : 9)); }
   else if (p.key === "double"){ doubleLeft = 5; }
@@ -438,6 +439,7 @@ function paintStreak(){
 }
 
 function tierBanner(){
+  if (window.GRSound) GRSound.tier();
   const n = el("tier");
   if (!n) return;
   n.textContent = "LEVEL " + (level()+1);
@@ -472,6 +474,7 @@ function judge(){
     if (streak > bestStreak) bestStreak = streak;
     scoreEl.textContent = score;
     replay(scoreEl, "punch");
+    if (window.GRSound) GRSound.right(streak);
     scoreEl.classList.toggle("hot", streak >= 5);
     pop("+" + worth, true);
     paintStreak();
@@ -500,12 +503,14 @@ function judge(){
        for exactly this reason. */
     shield = false;
     paintPowers();
+    if (window.GRSound) GRSound.shield();
     pop("SHIELD", true);
     say("<b>Shield took that one</b> — it was <b>" + question.answer + "</b>" +
         (question.note ? "<br>" + question.note : ""), true);
   } else {
     lives--;
     paintLives();
+    if (window.GRSound) GRSound.wrong();
     speed = Math.max(START_SPEED, speed - 5);
     /* The convoy scatters. Losing five cars you spent five right
        answers earning is the sting; the heart is the consequence. */
@@ -547,6 +552,7 @@ function secondChance(){
 
 function gameOver(){
   running = false;
+  if (window.GRSound) GRSound.over();
   nextAt = 0;
   gatesAt = 0;
   /* The flash and the badges are now cleared inside the frame loop,
@@ -1043,6 +1049,7 @@ function frame(now){
 }
 
 function start(){
+  if (window.GRSound) GRSound.start();
   /* Without this, a machine with no WebGL - acceleration switched off,
      a locked-down Chromebook - showed the "can't run the 3d" note and
      then let you press Start anyway: the menu vanished, setQuestion()
